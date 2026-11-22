@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.SmsVaultSync" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#2563EB</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+    </style>
+</resources>
