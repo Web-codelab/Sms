@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">SMS Vault Sync</string>
-    <string name="default_endpoint">https://Webcodelab.in/WCL/backup_sms.php</string>
+    <string name="nav_open">Open navigation menu</string>
+    <string name="nav_close">Close navigation menu</string>
 </resources>

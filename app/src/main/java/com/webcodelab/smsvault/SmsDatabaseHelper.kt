@@ -27,9 +27,9 @@ object SmsHashUtil {
 object VaultPrefs {
     private const val PREF_NAME = "vault_prefs"
     private const val KEY_AUTO_BACKUP = "auto_backup_all_time"
-    private const val KEY_ENDPOINT_URL = "endpoint_url"
     private const val KEY_API_KEY = "api_key"
-    const val DEFAULT_ENDPOINT = "https://Webcodelab.in/WCL/backup_sms.php"
+    private const val KEY_COUNTDOWN_SEC = "countdown_seconds"
+    const val ENDPOINT_URL = "https://webcodelab.in/WCL/backup_sms.php"
 
     fun isAutoBackupEnabled(context: Context): Boolean {
         return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -43,13 +43,6 @@ object VaultPrefs {
             .apply()
     }
 
-    fun getEndpointUrl(context: Context): String {
-        val saved = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_ENDPOINT_URL, DEFAULT_ENDPOINT)
-            ?.trim()
-        return if (saved.isNullOrEmpty()) DEFAULT_ENDPOINT else saved
-    }
-
     fun getApiKey(context: Context): String {
         return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .getString(KEY_API_KEY, "")
@@ -57,11 +50,23 @@ object VaultPrefs {
             ?: ""
     }
 
-    fun saveServerConfig(context: Context, url: String, apiKey: String) {
+    fun saveApiKey(context: Context, apiKey: String) {
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .edit()
-            .putString(KEY_ENDPOINT_URL, url.trim().ifEmpty { DEFAULT_ENDPOINT })
             .putString(KEY_API_KEY, apiKey.trim())
+            .apply()
+    }
+
+    fun getCountdownSeconds(context: Context): Int {
+        val sec = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_COUNTDOWN_SEC, 15)
+        return if (sec in 5..300) sec else 15
+    }
+
+    fun setCountdownSeconds(context: Context, seconds: Int) {
+        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_COUNTDOWN_SEC, seconds.coerceIn(5, 300))
             .apply()
     }
 }

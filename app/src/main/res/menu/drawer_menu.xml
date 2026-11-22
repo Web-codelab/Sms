@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <group android:checkableBehavior="single">
+        <item
+            android:id="@+id/nav_countdown"
+            android:icon="@drawable/ic_timer"
+            android:title="Auto-Sync Countdown" />
+        <item
+            android:id="@+id/nav_sms_manager"
+            android:icon="@drawable/ic_sms_manager"
+            android:title="SMS Manager" />
+    </group>
+</menu>

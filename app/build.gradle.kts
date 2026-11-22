@@ -47,6 +47,7 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.recyclerview)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.drawerlayout)
     implementation(libs.okhttp)
     implementation(libs.gson)
 }

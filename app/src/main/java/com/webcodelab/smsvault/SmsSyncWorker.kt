@@ -35,7 +35,7 @@ class SmsSyncWorker(
 
     override suspend fun doWork(): Result {
         val db = SmsDatabaseHelper.getInstance(applicationContext)
-        val endpointUrl = VaultPrefs.getEndpointUrl(applicationContext)
+        val endpointUrl = VaultPrefs.ENDPOINT_URL
         val apiKey = VaultPrefs.getApiKey(applicationContext)
         val deviceId = Settings.Secure.getString(
             applicationContext.contentResolver,

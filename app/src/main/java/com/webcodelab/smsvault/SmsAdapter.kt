@@ -44,10 +44,12 @@ class SmsAdapter(
 
             if (item.isSynced) {
                 tvStatus.text = "Synced"
-                tvStatus.setTextColor(Color.parseColor("#16A34A"))
+                tvStatus.setTextColor(Color.parseColor("#15803D"))
+                tvStatus.background?.setTint(Color.parseColor("#DCFCE7"))
             } else {
                 tvStatus.text = "Pending"
-                tvStatus.setTextColor(Color.parseColor("#D97706"))
+                tvStatus.setTextColor(Color.parseColor("#B45309"))
+                tvStatus.background?.setTint(Color.parseColor("#FEF3C7"))
             }
 
             itemView.setOnClickListener { onItemClick(item) }
