@@ -1,0 +1,6 @@
+{
+  "name": "SMS Vault Sync",
+  "description": "SMS inbox viewer, offline-resilient auto-backup simulator, and production PHP MySQL + Android Kotlin source kit.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
