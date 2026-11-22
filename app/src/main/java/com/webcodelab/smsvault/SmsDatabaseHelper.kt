@@ -28,7 +28,6 @@ object VaultPrefs {
     private const val PREF_NAME = "vault_prefs"
     private const val KEY_AUTO_BACKUP = "auto_backup_all_time"
     private const val KEY_API_KEY = "api_key"
-    private const val KEY_COUNTDOWN_SEC = "countdown_seconds"
     const val ENDPOINT_URL = "https://webcodelab.in/WCL/backup_sms.php"
 
     fun isAutoBackupEnabled(context: Context): Boolean {
@@ -54,19 +53,6 @@ object VaultPrefs {
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_API_KEY, apiKey.trim())
-            .apply()
-    }
-
-    fun getCountdownSeconds(context: Context): Int {
-        val sec = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-            .getInt(KEY_COUNTDOWN_SEC, 15)
-        return if (sec in 5..300) sec else 15
-    }
-
-    fun setCountdownSeconds(context: Context, seconds: Int) {
-        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putInt(KEY_COUNTDOWN_SEC, seconds.coerceIn(5, 300))
             .apply()
     }
 }

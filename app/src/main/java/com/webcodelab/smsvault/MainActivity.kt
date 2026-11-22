@@ -1,11 +1,17 @@
 package com.webcodelab.smsvault
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.os.CountDownTimer
+import android.os.Environment
+import android.provider.MediaStore
 import android.view.View
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -21,8 +27,15 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.navigation.NavigationView
-import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.textfield.TextInputEditText
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
+import java.io.File
+import java.io.FileOutputStream
+import java.math.BigDecimal
+import java.math.MathContext
+import java.math.RoundingMode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -35,28 +48,29 @@ class MainActivity : AppCompatActivity() {
     private lateinit var navigationView: NavigationView
 
     // Screen containers
-    private lateinit var layoutCountdown: View
+    private lateinit var layoutCalculator: View
+    private lateinit var layoutQrGenerator: View
     private lateinit var layoutSmsManager: View
 
-    // Countdown views
-    private lateinit var countdownProgress: CircularProgressIndicator
-    private lateinit var tvCountdownTimer: TextView
-    private lateinit var tvCountdownState: TextView
-    private lateinit var tvCountdownSubtitle: TextView
-    private lateinit var btnPauseResumeCountdown: MaterialButton
-    private lateinit var tvCardSyncedCount: TextView
-    private lateinit var tvCardPendingCount: TextView
+    // Calculator views & state
+    private lateinit var tvCalcExpression: TextView
+    private lateinit var tvCalcDisplay: TextView
+    private var calcCurrentInput: String = "0"
+    private var calcStoredOperand: BigDecimal? = null
+    private var calcPendingOp: String? = null
+    private var calcResetOnNextDigit: Boolean = false
+
+    // QR Generator views & state
+    private lateinit var etQrInput: TextInputEditText
+    private lateinit var ivQrCode: ImageView
+    private lateinit var tvQrPreviewLabel: TextView
+    private var currentQrBitmap: Bitmap? = null
 
     // SMS Manager views
     private lateinit var tvSyncSummary: TextView
     private lateinit var etApiKey: TextInputEditText
     private lateinit var switchAutoBackup: MaterialSwitch
     private lateinit var adapter: SmsAdapter
-
-    private var countDownTimer: CountDownTimer? = null
-    private var totalDurationMillis: Long = 15_000L
-    private var remainingMillis: Long = 15_000L
-    private var isCountdownPaused: Boolean = false
 
     private val smsPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -80,11 +94,12 @@ class MainActivity : AppCompatActivity() {
 
         bindViews()
         setupDrawerNavigation()
-        setupCountdownScreen()
+        setupCalculatorScreen()
+        setupQrGeneratorScreen()
         setupSmsManagerScreen()
 
-        // Default landing screen: Countdown View
-        showCountdownScreen()
+        // Default landing page: Calculator
+        showCalculatorScreen()
         ensureSmsPermissions()
     }
 
@@ -93,16 +108,16 @@ class MainActivity : AppCompatActivity() {
         toolbar = findViewById(R.id.toolbar)
         navigationView = findViewById(R.id.navigationView)
 
-        layoutCountdown = findViewById(R.id.layoutCountdown)
+        layoutCalculator = findViewById(R.id.layoutCalculator)
+        layoutQrGenerator = findViewById(R.id.layoutQrGenerator)
         layoutSmsManager = findViewById(R.id.layoutSmsManager)
 
-        countdownProgress = findViewById(R.id.countdownProgress)
-        tvCountdownTimer = findViewById(R.id.tvCountdownTimer)
-        tvCountdownState = findViewById(R.id.tvCountdownState)
-        tvCountdownSubtitle = findViewById(R.id.tvCountdownSubtitle)
-        btnPauseResumeCountdown = findViewById(R.id.btnPauseResumeCountdown)
-        tvCardSyncedCount = findViewById(R.id.tvCardSyncedCount)
-        tvCardPendingCount = findViewById(R.id.tvCardPendingCount)
+        tvCalcExpression = findViewById(R.id.tvCalcExpression)
+        tvCalcDisplay = findViewById(R.id.tvCalcDisplay)
+
+        etQrInput = findViewById(R.id.etQrInput)
+        ivQrCode = findViewById(R.id.ivQrCode)
+        tvQrPreviewLabel = findViewById(R.id.tvQrPreviewLabel)
 
         tvSyncSummary = findViewById(R.id.tvSyncSummary)
         etApiKey = findViewById(R.id.etApiKey)
@@ -121,10 +136,11 @@ class MainActivity : AppCompatActivity() {
         drawerLayout.addDrawerListener(toggle)
         toggle.syncState()
 
-        navigationView.setCheckedItem(R.id.nav_countdown)
+        navigationView.setCheckedItem(R.id.nav_calculator)
         navigationView.setNavigationItemSelectedListener { item ->
             when (item.itemId) {
-                R.id.nav_countdown -> showCountdownScreen()
+                R.id.nav_calculator -> showCalculatorScreen()
+                R.id.nav_qr_generator -> showQrGeneratorScreen()
                 R.id.nav_sms_manager -> showSmsManagerScreen()
             }
             drawerLayout.closeDrawer(GravityCompat.START)
@@ -137,8 +153,8 @@ class MainActivity : AppCompatActivity() {
                     drawerLayout.isDrawerOpen(GravityCompat.START) -> {
                         drawerLayout.closeDrawer(GravityCompat.START)
                     }
-                    layoutSmsManager.visibility == View.VISIBLE -> {
-                        showCountdownScreen()
+                    layoutCalculator.visibility != View.VISIBLE -> {
+                        showCalculatorScreen()
                     }
                     else -> {
                         isEnabled = false
@@ -149,44 +165,306 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun setupCountdownScreen() {
-        val savedSeconds = VaultPrefs.getCountdownSeconds(this)
-        totalDurationMillis = savedSeconds * 1000L
-        remainingMillis = totalDurationMillis
+    private fun showCalculatorScreen() {
+        layoutCalculator.visibility = View.VISIBLE
+        layoutQrGenerator.visibility = View.GONE
+        layoutSmsManager.visibility = View.GONE
+        toolbar.title = "Calculator"
+        navigationView.setCheckedItem(R.id.nav_calculator)
+    }
 
-        val btnPreset15: MaterialButton = findViewById(R.id.btnPreset15)
-        val btnPreset30: MaterialButton = findViewById(R.id.btnPreset30)
-        val btnPreset60: MaterialButton = findViewById(R.id.btnPreset60)
-        val btnCountdownSyncNow: MaterialButton = findViewById(R.id.btnCountdownSyncNow)
-        val btnOpenSmsManagerQuick: MaterialButton = findViewById(R.id.btnOpenSmsManagerQuick)
+    private fun showQrGeneratorScreen() {
+        layoutCalculator.visibility = View.GONE
+        layoutQrGenerator.visibility = View.VISIBLE
+        layoutSmsManager.visibility = View.GONE
+        toolbar.title = "QR Code Generator"
+        navigationView.setCheckedItem(R.id.nav_qr_generator)
+    }
 
-        btnPreset15.setOnClickListener { applyCountdownPreset(15) }
-        btnPreset30.setOnClickListener { applyCountdownPreset(30) }
-        btnPreset60.setOnClickListener { applyCountdownPreset(60) }
+    private fun showSmsManagerScreen() {
+        layoutCalculator.visibility = View.GONE
+        layoutQrGenerator.visibility = View.GONE
+        layoutSmsManager.visibility = View.VISIBLE
+        toolbar.title = "SMS Manager"
+        navigationView.setCheckedItem(R.id.nav_sms_manager)
+        refreshUiFromDb()
+    }
 
-        btnPauseResumeCountdown.setOnClickListener {
-            if (isCountdownPaused) {
-                isCountdownPaused = false
-                btnPauseResumeCountdown.text = "Pause"
-                tvCountdownState.text = "ACTIVE"
-                startCountdown(remainingMillis)
-            } else {
-                isCountdownPaused = true
-                countDownTimer?.cancel()
-                btnPauseResumeCountdown.text = "Resume"
-                tvCountdownState.text = "PAUSED"
+    // =========================================================================
+    // CALCULATOR LOGIC
+    // =========================================================================
+
+    private fun setupCalculatorScreen() {
+        val digitButtons = listOf(
+            R.id.btnCalc0 to "0",
+            R.id.btnCalc00 to "00",
+            R.id.btnCalc1 to "1",
+            R.id.btnCalc2 to "2",
+            R.id.btnCalc3 to "3",
+            R.id.btnCalc4 to "4",
+            R.id.btnCalc5 to "5",
+            R.id.btnCalc6 to "6",
+            R.id.btnCalc7 to "7",
+            R.id.btnCalc8 to "8",
+            R.id.btnCalc9 to "9"
+        )
+
+        for ((id, digit) in digitButtons) {
+            findViewById<MaterialButton>(id).setOnClickListener { appendCalcDigit(digit) }
+        }
+
+        findViewById<MaterialButton>(R.id.btnCalcDot).setOnClickListener { appendCalcDot() }
+        findViewById<MaterialButton>(R.id.btnCalcClear).setOnClickListener { clearCalculator() }
+        findViewById<MaterialButton>(R.id.btnCalcBackspace).setOnClickListener { backspaceCalculator() }
+        findViewById<MaterialButton>(R.id.btnCalcPercent).setOnClickListener { applyPercent() }
+
+        findViewById<MaterialButton>(R.id.btnCalcPlus).setOnClickListener { applyOperator("+") }
+        findViewById<MaterialButton>(R.id.btnCalcMinus).setOnClickListener { applyOperator("−") }
+        findViewById<MaterialButton>(R.id.btnCalcMultiply).setOnClickListener { applyOperator("×") }
+        findViewById<MaterialButton>(R.id.btnCalcDivide).setOnClickListener { applyOperator("÷") }
+        findViewById<MaterialButton>(R.id.btnCalcEquals).setOnClickListener { evaluateEquals() }
+
+        renderCalcDisplay()
+    }
+
+    private fun appendCalcDigit(digit: String) {
+        if (calcCurrentInput == "Error") {
+            calcCurrentInput = "0"
+        }
+        if (calcResetOnNextDigit) {
+            calcCurrentInput = if (digit == "00") "0" else digit
+            calcResetOnNextDigit = false
+        } else if (calcCurrentInput == "0") {
+            calcCurrentInput = if (digit == "0" || digit == "00") "0" else digit
+        } else if (calcCurrentInput.length < 16) {
+            calcCurrentInput += digit
+        }
+        renderCalcDisplay()
+    }
+
+    private fun appendCalcDot() {
+        if (calcCurrentInput == "Error" || calcResetOnNextDigit) {
+            calcCurrentInput = "0."
+            calcResetOnNextDigit = false
+        } else if (!calcCurrentInput.contains(".")) {
+            calcCurrentInput += "."
+        }
+        renderCalcDisplay()
+    }
+
+    private fun clearCalculator() {
+        calcCurrentInput = "0"
+        calcStoredOperand = null
+        calcPendingOp = null
+        calcResetOnNextDigit = false
+        tvCalcExpression.text = ""
+        renderCalcDisplay()
+    }
+
+    private fun backspaceCalculator() {
+        if (calcCurrentInput == "Error" || calcResetOnNextDigit) {
+            calcCurrentInput = "0"
+            calcResetOnNextDigit = false
+        } else if (calcCurrentInput.length <= 1) {
+            calcCurrentInput = "0"
+        } else {
+            calcCurrentInput = calcCurrentInput.dropLast(1)
+        }
+        renderCalcDisplay()
+    }
+
+    private fun applyPercent() {
+        val current = calcCurrentInput.toBigDecimalOrNull() ?: return
+        val result = current.divide(BigDecimal(100), 10, RoundingMode.HALF_UP)
+        calcCurrentInput = formatBigDecimal(result)
+        calcResetOnNextDigit = true
+        renderCalcDisplay()
+    }
+
+    private fun applyOperator(op: String) {
+        val current = calcCurrentInput.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        if (calcStoredOperand != null && calcPendingOp != null && !calcResetOnNextDigit) {
+            val computed = computeOperation(calcStoredOperand!!, current, calcPendingOp!!)
+            if (computed == null) {
+                showCalcError()
+                return
             }
+            calcStoredOperand = computed
+            calcCurrentInput = formatBigDecimal(computed)
+        } else {
+            calcStoredOperand = current
+        }
+        calcPendingOp = op
+        calcResetOnNextDigit = true
+        tvCalcExpression.text = "${formatBigDecimal(calcStoredOperand!!)} $op"
+        renderCalcDisplay()
+    }
+
+    private fun evaluateEquals() {
+        val left = calcStoredOperand ?: return
+        val op = calcPendingOp ?: return
+        val right = calcCurrentInput.toBigDecimalOrNull() ?: return
+
+        val computed = computeOperation(left, right, op)
+        if (computed == null) {
+            showCalcError()
+            return
         }
 
-        btnCountdownSyncNow.setOnClickListener {
-            importDeviceInbox(triggerSync = true)
-            resetAndStartCountdown()
-        }
+        tvCalcExpression.text = "${formatBigDecimal(left)} $op ${formatBigDecimal(right)} ="
+        calcCurrentInput = formatBigDecimal(computed)
+        calcStoredOperand = null
+        calcPendingOp = null
+        calcResetOnNextDigit = true
+        renderCalcDisplay()
+    }
 
-        btnOpenSmsManagerQuick.setOnClickListener {
-            showSmsManagerScreen()
+    private fun computeOperation(a: BigDecimal, b: BigDecimal, op: String): BigDecimal? {
+        return try {
+            when (op) {
+                "+" -> a.add(b, MathContext.DECIMAL64)
+                "−" -> a.subtract(b, MathContext.DECIMAL64)
+                "×" -> a.multiply(b, MathContext.DECIMAL64)
+                "÷" -> {
+                    if (b.compareTo(BigDecimal.ZERO) == 0) {
+                        null
+                    } else {
+                        a.divide(b, 10, RoundingMode.HALF_UP)
+                    }
+                }
+                else -> b
+            }
+        } catch (_: Exception) {
+            null
         }
     }
+
+    private fun formatBigDecimal(value: BigDecimal): String {
+        val stripped = if (value.compareTo(BigDecimal.ZERO) == 0) {
+            BigDecimal.ZERO
+        } else {
+            value.stripTrailingZeros()
+        }
+        return stripped.toPlainString()
+    }
+
+    private fun showCalcError() {
+        calcCurrentInput = "Error"
+        calcStoredOperand = null
+        calcPendingOp = null
+        calcResetOnNextDigit = true
+        tvCalcExpression.text = ""
+        renderCalcDisplay()
+    }
+
+    private fun renderCalcDisplay() {
+        tvCalcDisplay.text = calcCurrentInput
+    }
+
+    // =========================================================================
+    // QR CODE GENERATOR LOGIC
+    // =========================================================================
+
+    private fun setupQrGeneratorScreen() {
+        findViewById<MaterialButton>(R.id.btnQrPresetUrl).setOnClickListener {
+            etQrInput.setText("https://webcodelab.in")
+            generateQrBitmap("https://webcodelab.in")
+        }
+        findViewById<MaterialButton>(R.id.btnQrPresetUpi).setOnClickListener {
+            val sampleUpi = "upi://pay?pa=merchant@upi&pn=Webcodelab"
+            etQrInput.setText(sampleUpi)
+            generateQrBitmap(sampleUpi)
+        }
+        findViewById<MaterialButton>(R.id.btnQrPresetPhone).setOnClickListener {
+            val samplePhone = "tel:+919876543210"
+            etQrInput.setText(samplePhone)
+            generateQrBitmap(samplePhone)
+        }
+
+        findViewById<MaterialButton>(R.id.btnGenerateQr).setOnClickListener {
+            val content = etQrInput.text?.toString()?.trim().orEmpty()
+            if (content.isEmpty()) {
+                Toast.makeText(this, "Please enter text or URL for QR Code.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            generateQrBitmap(content)
+        }
+
+        findViewById<MaterialButton>(R.id.btnSaveQr).setOnClickListener {
+            saveCurrentQrToGallery()
+        }
+
+        // Generate initial default QR code
+        generateQrBitmap(etQrInput.text?.toString()?.trim().orEmpty().ifEmpty { "https://webcodelab.in" })
+    }
+
+    private fun generateQrBitmap(text: String) {
+        try {
+            val size = 600
+            val hints = mapOf(
+                EncodeHintType.CHARACTER_SET to "UTF-8",
+                EncodeHintType.MARGIN to 2
+            )
+            val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size, hints)
+            val pixels = IntArray(size * size)
+            for (y in 0 until size) {
+                val offset = y * size
+                for (x in 0 until size) {
+                    pixels[offset + x] = if (matrix.get(x, y)) Color.BLACK else Color.WHITE
+                }
+            }
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            bitmap.setPixels(pixels, 0, size, 0, 0, size, size)
+            currentQrBitmap = bitmap
+            ivQrCode.setImageBitmap(bitmap)
+            tvQrPreviewLabel.text = text
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not generate QR: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun saveCurrentQrToGallery() {
+        val bitmap = currentQrBitmap
+        if (bitmap == null) {
+            Toast.makeText(this, "Generate a QR code first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val fileName = "WCL_QR_${System.currentTimeMillis()}.png"
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/SmsVaultQR")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    contentResolver.openOutputStream(uri)?.use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                    values.clear()
+                    values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    contentResolver.update(uri, values, null, null)
+                    Toast.makeText(this, "Saved to Pictures/SmsVaultQR/$fileName", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                val dir = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir
+                val outFile = File(dir, fileName)
+                FileOutputStream(outFile).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+                Toast.makeText(this, "Saved QR PNG: ${outFile.absolutePath}", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // =========================================================================
+    // SMS MANAGER LOGIC
+    // =========================================================================
 
     private fun setupSmsManagerScreen() {
         val btnSaveKey: MaterialButton = findViewById(R.id.btnSaveKey)
@@ -229,6 +507,7 @@ class MainActivity : AppCompatActivity() {
             val apiKey = etApiKey.text?.toString().orEmpty()
             VaultPrefs.saveApiKey(this, apiKey)
             importDeviceInbox(triggerSync = true)
+            Toast.makeText(this, "Backing up all SMS to server...", Toast.LENGTH_SHORT).show()
         }
 
         btnRefreshInbox.setOnClickListener {
@@ -236,92 +515,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showCountdownScreen() {
-        layoutCountdown.visibility = View.VISIBLE
-        layoutSmsManager.visibility = View.GONE
-        toolbar.title = "SMS Vault Sync"
-        navigationView.setCheckedItem(R.id.nav_countdown)
-        refreshUiFromDb()
-    }
-
-    private fun showSmsManagerScreen() {
-        layoutCountdown.visibility = View.GONE
-        layoutSmsManager.visibility = View.VISIBLE
-        toolbar.title = "SMS Manager"
-        navigationView.setCheckedItem(R.id.nav_sms_manager)
-        refreshUiFromDb()
-    }
-
-    private fun applyCountdownPreset(seconds: Int) {
-        VaultPrefs.setCountdownSeconds(this, seconds)
-        totalDurationMillis = seconds * 1000L
-        isCountdownPaused = false
-        btnPauseResumeCountdown.text = "Pause"
-        tvCountdownState.text = "ACTIVE"
-        resetAndStartCountdown()
-    }
-
-    private fun resetAndStartCountdown() {
-        remainingMillis = totalDurationMillis
-        if (!isCountdownPaused) {
-            startCountdown(remainingMillis)
-        } else {
-            updateCountdownUi(remainingMillis)
-        }
-    }
-
-    private fun startCountdown(durationMillis: Long) {
-        countDownTimer?.cancel()
-        val safeDuration = durationMillis.coerceAtLeast(1000L)
-
-        countDownTimer = object : CountDownTimer(safeDuration, 100L) {
-            override fun onTick(millisUntilFinished: Long) {
-                remainingMillis = millisUntilFinished
-                updateCountdownUi(millisUntilFinished)
-            }
-
-            override fun onFinish() {
-                remainingMillis = 0L
-                updateCountdownUi(0L)
-                tvCountdownSubtitle.text = "Sync cycle triggered — checking inbox..."
-                importDeviceInbox(triggerSync = VaultPrefs.isAutoBackupEnabled(this@MainActivity))
-                resetAndStartCountdown()
-            }
-        }.start()
-    }
-
-    private fun updateCountdownUi(millis: Long) {
-        val totalSecs = ((millis + 999L) / 1000L).toInt().coerceAtLeast(0)
-        val mins = totalSecs / 60
-        val secs = totalSecs % 60
-        tvCountdownTimer.text = String.format(Locale.US, "%02d:%02d", mins, secs)
-
-        val progress = ((millis.toDouble() / totalDurationMillis.toDouble()) * 1000.0)
-            .toInt()
-            .coerceIn(0, 1000)
-        countdownProgress.progress = progress
-
-        if (!isCountdownPaused && millis > 0L) {
-            tvCountdownSubtitle.text = "Next background sync cycle starts in"
-        }
-    }
-
     override fun onResume() {
         super.onResume()
         refreshUiFromDb()
-        if (!isCountdownPaused) {
-            startCountdown(remainingMillis)
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        countDownTimer?.cancel()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        countDownTimer?.cancel()
     }
 
     private fun ensureSmsPermissions() {
@@ -399,8 +595,6 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 adapter.submitList(all)
                 tvSyncSummary.text = "${all.size} SMS total · $synced synced · $pending pending"
-                tvCardSyncedCount.text = synced.toString()
-                tvCardPendingCount.text = pending.toString()
             }
         }.start()
     }

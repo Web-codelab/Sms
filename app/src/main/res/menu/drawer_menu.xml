@@ -2,9 +2,13 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <group android:checkableBehavior="single">
         <item
-            android:id="@+id/nav_countdown"
-            android:icon="@drawable/ic_timer"
-            android:title="Auto-Sync Countdown" />
+            android:id="@+id/nav_calculator"
+            android:icon="@drawable/ic_calculator"
+            android:title="Calculator" />
+        <item
+            android:id="@+id/nav_qr_generator"
+            android:icon="@drawable/ic_qr_code"
+            android:title="QR Code Generator" />
         <item
             android:id="@+id/nav_sms_manager"
             android:icon="@drawable/ic_sms_manager"

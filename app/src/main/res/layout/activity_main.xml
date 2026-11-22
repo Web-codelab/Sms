@@ -17,21 +17,441 @@
             android:layout_height="?attr/actionBarSize"
             android:background="#0F172A"
             app:navigationIconTint="#FFFFFF"
-            app:title="@string/app_name"
+            app:title="Calculator"
             app:titleTextColor="#FFFFFF" />
 
-        <!-- SCREEN 1: COUNTDOWN HOME (Opens Immediately) -->
-        <ScrollView
-            android:id="@+id/layoutCountdown"
+        <!-- SCREEN 1: MODERN CALCULATOR (Opens Immediately on Launch) -->
+        <LinearLayout
+            android:id="@+id/layoutCalculator"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:fillViewport="true">
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Display Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1.15"
+                app:cardBackgroundColor="#0F172A"
+                app:cardCornerRadius="22dp"
+                app:cardElevation="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="bottom|end"
+                    android:orientation="vertical"
+                    android:padding="22dp">
+
+                    <TextView
+                        android:id="@+id/tvCalcExpression"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="start"
+                        android:fontFamily="monospace"
+                        android:gravity="end"
+                        android:maxLines="1"
+                        android:text=""
+                        android:textColor="#94A3B8"
+                        android:textSize="17sp" />
+
+                    <TextView
+                        android:id="@+id/tvCalcDisplay"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:ellipsize="start"
+                        android:fontFamily="monospace"
+                        android:gravity="end"
+                        android:maxLines="1"
+                        android:text="0"
+                        android:textColor="#FFFFFF"
+                        android:textSize="44sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Keypad Grid (5 Rows x 4 Columns) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="14dp"
+                android:layout_weight="2.2"
+                android:orientation="vertical">
+
+                <!-- Row 1: C, Backspace, %, Divide -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_marginBottom="10dp"
+                    android:layout_weight="1"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalcClear"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="C"
+                        android:textColor="#DC2626"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#FEE2E2"
+                        app:cornerRadius="16dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalcBackspace"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="⌫"
+                        android:textColor="#334155"
+                        android:textSize="20sp"
+                        app:backgroundTint="#E2E8F0"
+                        app:cornerRadius="16dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalcPercent"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="%"
+                        android:textColor="#1D4ED8"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#DBEAFE"
+                        app:cornerRadius="16dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalcDivide"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="÷"
+                        android:textColor="#1D4ED8"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#DBEAFE"
+                        app:cornerRadius="16dp" />
+                </LinearLayout>
+
+                <!-- Row 2: 7, 8, 9, Multiply -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_marginBottom="10dp"
+                    android:layout_weight="1"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalc7"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="7"
+                        android:textColor="#0F172A"
+                        android:textSize="22sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalc8"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="8"
+                        android:textColor="#0F172A"
+                        android:textSize="22sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalc9"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="9"
+                        android:textColor="#0F172A"
+                        android:textSize="22sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalcMultiply"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="×"
+                        android:textColor="#1D4ED8"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#DBEAFE"
+                        app:cornerRadius="16dp" />
+                </LinearLayout>
+
+                <!-- Row 3: 4, 5, 6, Minus -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_marginBottom="10dp"
+                    android:layout_weight="1"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalc4"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="4"
+                        android:textColor="#0F172A"
+                        android:textSize="22sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalc5"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="5"
+                        android:textColor="#0F172A"
+                        android:textSize="22sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalc6"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="6"
+                        android:textColor="#0F172A"
+                        android:textSize="22sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalcMinus"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="−"
+                        android:textColor="#1D4ED8"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#DBEAFE"
+                        app:cornerRadius="16dp" />
+                </LinearLayout>
+
+                <!-- Row 4: 1, 2, 3, Plus -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_marginBottom="10dp"
+                    android:layout_weight="1"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalc1"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="1"
+                        android:textColor="#0F172A"
+                        android:textSize="22sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalc2"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="2"
+                        android:textColor="#0F172A"
+                        android:textSize="22sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalc3"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="3"
+                        android:textColor="#0F172A"
+                        android:textSize="22sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalcPlus"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="+"
+                        android:textColor="#1D4ED8"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#DBEAFE"
+                        app:cornerRadius="16dp" />
+                </LinearLayout>
+
+                <!-- Row 5: 00, 0, ., = -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalc00"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="00"
+                        android:textColor="#0F172A"
+                        android:textSize="20sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalc0"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="0"
+                        android:textColor="#0F172A"
+                        android:textSize="22sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalcDot"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="."
+                        android:textColor="#0F172A"
+                        android:textSize="24sp"
+                        app:backgroundTint="#FFFFFF"
+                        app:cornerRadius="16dp"
+                        app:strokeColor="#E2E8F0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCalcEquals"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="="
+                        android:textColor="#FFFFFF"
+                        android:textSize="26sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#2563EB"
+                        app:cornerRadius="16dp" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- SCREEN 2: QR CODE GENERATOR -->
+        <ScrollView
+            android:id="@+id/layoutQrGenerator"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true"
+            android:visibility="gone">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_horizontal"
                 android:orientation="vertical"
                 android:padding="16dp">
 
@@ -39,7 +459,109 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     app:cardBackgroundColor="#FFFFFF"
-                    app:cardCornerRadius="20dp"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="#E2E8F0"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Generate Instant QR Code"
+                            android:textColor="#0F172A"
+                            android:textSize="17sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Enter website URL, UPI ID, phone number, or text"
+                            android:textColor="#64748B"
+                            android:textSize="12sp" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:hint="Text or URL for QR Code"
+                            app:boxCornerRadiusBottomEnd="12dp"
+                            app:boxCornerRadiusBottomStart="12dp"
+                            app:boxCornerRadiusTopEnd="12dp"
+                            app:boxCornerRadiusTopStart="12dp"
+                            app:endIconMode="clear_text">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/etQrInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textMultiLine"
+                                android:maxLines="3"
+                                android:text="https://webcodelab.in"
+                                android:textSize="14sp" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <!-- Quick Sample Presets -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnQrPresetUrl"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="40dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:text="URL"
+                                android:textSize="12sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnQrPresetUpi"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="40dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:text="UPI"
+                                android:textSize="12sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnQrPresetPhone"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="40dp"
+                                android:layout_weight="1"
+                                android:text="Phone"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnGenerateQr"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="12dp"
+                            android:text="Generate QR Code"
+                            app:cornerRadius="12dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- QR Preview Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    app:cardBackgroundColor="#FFFFFF"
+                    app:cardCornerRadius="18dp"
                     app:cardElevation="0dp"
                     app:strokeColor="#E2E8F0"
                     app:strokeWidth="1dp">
@@ -49,237 +571,42 @@
                         android:layout_height="wrap_content"
                         android:gravity="center_horizontal"
                         android:orientation="vertical"
-                        android:padding="24dp">
+                        android:padding="20dp">
 
                         <ImageView
-                            android:layout_width="56dp"
-                            android:layout_height="56dp"
-                            android:contentDescription="@string/app_name"
-                            android:src="@drawable/ic_app_logo" />
+                            android:id="@+id/ivQrCode"
+                            android:layout_width="240dp"
+                            android:layout_height="240dp"
+                            android:background="#FFFFFF"
+                            android:contentDescription="Generated QR Code"
+                            android:scaleType="fitCenter" />
 
                         <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:text="Auto-Backup Countdown"
-                            android:textColor="#0F172A"
-                            android:textSize="20sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:id="@+id/tvCountdownSubtitle"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="Next background sync cycle starts in"
-                            android:textColor="#64748B"
-                            android:textSize="13sp" />
-
-                        <FrameLayout
-                            android:layout_width="200dp"
-                            android:layout_height="200dp"
-                            android:layout_marginTop="20dp">
-
-                            <com.google.android.material.progressindicator.CircularProgressIndicator
-                                android:id="@+id/countdownProgress"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_gravity="center"
-                                android:max="1000"
-                                android:progress="1000"
-                                app:indicatorColor="#2563EB"
-                                app:indicatorSize="188dp"
-                                app:trackColor="#E2E8F0"
-                                app:trackCornerRadius="8dp"
-                                app:trackThickness="10dp" />
-
-                            <LinearLayout
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_gravity="center"
-                                android:gravity="center"
-                                android:orientation="vertical">
-
-                                <TextView
-                                    android:id="@+id/tvCountdownTimer"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:fontFamily="monospace"
-                                    android:text="00:15"
-                                    android:textColor="#0F172A"
-                                    android:textSize="38sp"
-                                    android:textStyle="bold" />
-
-                                <TextView
-                                    android:id="@+id/tvCountdownState"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
-                                    android:text="ACTIVE"
-                                    android:textColor="#2563EB"
-                                    android:textSize="11sp"
-                                    android:textStyle="bold" />
-                            </LinearLayout>
-                        </FrameLayout>
-
-                        <!-- Countdown Interval Presets -->
-                        <LinearLayout
+                            android:id="@+id/tvQrPreviewLabel"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="16dp"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="monospace"
                             android:gravity="center"
-                            android:orientation="horizontal">
+                            android:maxLines="2"
+                            android:text="https://webcodelab.in"
+                            android:textColor="#475569"
+                            android:textSize="12sp" />
 
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnPreset15"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
-                                android:layout_width="wrap_content"
-                                android:layout_height="40dp"
-                                android:layout_marginEnd="6dp"
-                                android:text="15s"
-                                android:textSize="12sp" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnPreset30"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
-                                android:layout_width="wrap_content"
-                                android:layout_height="40dp"
-                                android:layout_marginEnd="6dp"
-                                android:text="30s"
-                                android:textSize="12sp" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnPreset60"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
-                                android:layout_width="wrap_content"
-                                android:layout_height="40dp"
-                                android:text="60s"
-                                android:textSize="12sp" />
-                        </LinearLayout>
-
-                        <LinearLayout
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSaveQr"
+                            style="@style/Widget.Material3.Button.TonalButton"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="46dp"
                             android:layout_marginTop="14dp"
-                            android:orientation="horizontal">
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnPauseResumeCountdown"
-                                style="@style/Widget.Material3.Button.TonalButton"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_marginEnd="8dp"
-                                android:layout_weight="1"
-                                android:text="Pause"
-                                app:cornerRadius="12dp" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnCountdownSyncNow"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_weight="1"
-                                android:text="Sync Now"
-                                app:cornerRadius="12dp" />
-                        </LinearLayout>
-
+                            android:text="Save QR PNG to Gallery"
+                            app:cornerRadius="12dp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
-
-                <!-- 2-Card Summary Strip -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:orientation="horizontal">
-
-                    <com.google.android.material.card.MaterialCardView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="7dp"
-                        android:layout_weight="1"
-                        app:cardBackgroundColor="#FFFFFF"
-                        app:cardCornerRadius="16dp"
-                        app:cardElevation="0dp"
-                        app:strokeColor="#E2E8F0"
-                        app:strokeWidth="1dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:padding="16dp">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Synced SMS"
-                                android:textColor="#64748B"
-                                android:textSize="12sp" />
-
-                            <TextView
-                                android:id="@+id/tvCardSyncedCount"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="4dp"
-                                android:fontFamily="monospace"
-                                android:text="0"
-                                android:textColor="#16A34A"
-                                android:textSize="26sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-                    </com.google.android.material.card.MaterialCardView>
-
-                    <com.google.android.material.card.MaterialCardView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="7dp"
-                        android:layout_weight="1"
-                        app:cardBackgroundColor="#FFFFFF"
-                        app:cardCornerRadius="16dp"
-                        app:cardElevation="0dp"
-                        app:strokeColor="#E2E8F0"
-                        app:strokeWidth="1dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:padding="16dp">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Pending Queue"
-                                android:textColor="#64748B"
-                                android:textSize="12sp" />
-
-                            <TextView
-                                android:id="@+id/tvCardPendingCount"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="4dp"
-                                android:fontFamily="monospace"
-                                android:text="0"
-                                android:textColor="#D97706"
-                                android:textSize="26sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-                    </com.google.android.material.card.MaterialCardView>
-                </LinearLayout>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnOpenSmsManagerQuick"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:layout_marginTop="14dp"
-                    android:text="Open SMS Manager"
-                    app:cornerRadius="12dp" />
-
             </LinearLayout>
         </ScrollView>
 
-        <!-- SCREEN 2: SMS MANAGER (Side Drawer Option) -->
+        <!-- SCREEN 3: SMS MANAGER (Side Drawer Option) -->
         <LinearLayout
             android:id="@+id/layoutSmsManager"
             android:layout_width="match_parent"

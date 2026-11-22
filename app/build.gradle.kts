@@ -50,4 +50,5 @@ dependencies {
     implementation(libs.androidx.drawerlayout)
     implementation(libs.okhttp)
     implementation(libs.gson)
+    implementation(libs.zxing.core)
 }
