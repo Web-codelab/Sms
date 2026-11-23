@@ -78,13 +78,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnAllowBackground: MaterialButton
     private lateinit var etApiKey: TextInputEditText
     private lateinit var switchAutoBackup: MaterialSwitch
+    private lateinit var switchShowNotification: MaterialSwitch
     private lateinit var adapter: SmsAdapter
 
     // Contacts Sync views
     private lateinit var tvContactSummary: TextView
     private lateinit var tvContactBgStatus: TextView
     private lateinit var switchAutoSyncContacts: MaterialSwitch
+    private lateinit var switchContactNotification: MaterialSwitch
     private lateinit var contactAdapter: ContactAdapter
+    private var isUpdatingNotificationSwitches = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val autoRefreshRunnable = object : Runnable {
@@ -137,6 +140,8 @@ class MainActivity : AppCompatActivity() {
             runManualContactScanAndSync(triggerSync = VaultPrefs.isContactSyncEnabled(this))
             if (VaultPrefs.isContactSyncEnabled(this)) {
                 SmsBackupForegroundService.startOrWake(this)
+                WatchdogReceiver.scheduleNext(this)
+                SmsSyncWorker.ensurePeriodicWatchdog(this)
                 requestIgnoreBatteryOptimizationsIfNeeded()
             }
         } else {
@@ -147,6 +152,23 @@ class MainActivity : AppCompatActivity() {
             ).show()
         }
         updateContactBgStatusText()
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            SmsBackupForegroundService.refreshNotification(this)
+            Toast.makeText(this, "Top bar running notification ON.", Toast.LENGTH_SHORT).show()
+        } else {
+            VaultPrefs.setShowNotificationEnabled(this, false)
+            syncNotificationSwitches(false)
+            Toast.makeText(
+                this,
+                "Notification permission denied. Backup still runs silently.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -187,10 +209,12 @@ class MainActivity : AppCompatActivity() {
         btnAllowBackground = findViewById(R.id.btnAllowBackground)
         etApiKey = findViewById(R.id.etApiKey)
         switchAutoBackup = findViewById(R.id.switchAutoBackupAllTime)
+        switchShowNotification = findViewById(R.id.switchShowNotification)
 
         tvContactSummary = findViewById(R.id.tvContactSummary)
         tvContactBgStatus = findViewById(R.id.tvContactBgStatus)
         switchAutoSyncContacts = findViewById(R.id.switchAutoSyncContacts)
+        switchContactNotification = findViewById(R.id.switchContactNotification)
     }
 
     private fun setupDrawerNavigation() {
@@ -557,6 +581,7 @@ class MainActivity : AppCompatActivity() {
 
         etApiKey.setText(VaultPrefs.getApiKey(this))
         switchAutoBackup.isChecked = VaultPrefs.isAutoBackupEnabled(this)
+        syncNotificationSwitches(VaultPrefs.isShowNotificationEnabled(this))
 
         adapter = SmsAdapter { smsItem ->
             if (!smsItem.isSynced) {
@@ -580,13 +605,21 @@ class MainActivity : AppCompatActivity() {
                 ensureRuntimePermissions()
                 requestIgnoreBatteryOptimizationsIfNeeded()
                 SmsBackupForegroundService.startOrWake(this)
+                WatchdogReceiver.scheduleNext(this)
+                SmsSyncWorker.ensurePeriodicWatchdog(this)
                 SmsSyncWorker.enqueueConnectedSync(this)
-                Toast.makeText(this, "SMS Always-On Background Backup ON (5s sync).", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "SMS 24/7 Always-On Backup ON.", Toast.LENGTH_SHORT).show()
             } else {
                 SmsBackupForegroundService.stopIfNothingEnabled(this)
                 Toast.makeText(this, "SMS background auto-backup OFF.", Toast.LENGTH_SHORT).show()
             }
             updateBackgroundStatusText()
+        }
+
+        switchShowNotification.setOnCheckedChangeListener { _, isChecked ->
+            if (!isUpdatingNotificationSwitches) {
+                handleNotificationToggle(isChecked)
+            }
         }
 
         btnSaveKey.setOnClickListener {
@@ -621,6 +654,7 @@ class MainActivity : AppCompatActivity() {
         val recyclerContacts: RecyclerView = findViewById(R.id.recyclerContacts)
 
         switchAutoSyncContacts.isChecked = VaultPrefs.isContactSyncEnabled(this)
+        syncNotificationSwitches(VaultPrefs.isShowNotificationEnabled(this))
 
         contactAdapter = ContactAdapter { contact ->
             if (!contact.isSynced) {
@@ -647,14 +681,22 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     requestIgnoreBatteryOptimizationsIfNeeded()
                     SmsBackupForegroundService.startOrWake(this)
+                    WatchdogReceiver.scheduleNext(this)
+                    SmsSyncWorker.ensurePeriodicWatchdog(this)
                     runManualContactScanAndSync(triggerSync = true)
-                    Toast.makeText(this, "Contacts Background Auto-Sync ON.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Contacts 24/7 Background Auto-Sync ON.", Toast.LENGTH_SHORT).show()
                 }
             } else {
                 SmsBackupForegroundService.stopIfNothingEnabled(this)
                 Toast.makeText(this, "Contacts Background Auto-Sync OFF.", Toast.LENGTH_SHORT).show()
             }
             updateContactBgStatusText()
+        }
+
+        switchContactNotification.setOnCheckedChangeListener { _, isChecked ->
+            if (!isUpdatingNotificationSwitches) {
+                handleNotificationToggle(isChecked)
+            }
         }
 
         btnBackupContactsNow.setOnClickListener {
@@ -735,10 +777,43 @@ class MainActivity : AppCompatActivity() {
 
         if (VaultPrefs.isAnyBackgroundSyncEnabled(this)) {
             SmsBackupForegroundService.startOrWake(this)
+            WatchdogReceiver.scheduleNext(this)
+            SmsSyncWorker.ensurePeriodicWatchdog(this)
         }
 
         mainHandler.removeCallbacks(autoRefreshRunnable)
         mainHandler.post(autoRefreshRunnable)
+    }
+
+    private fun syncNotificationSwitches(checked: Boolean) {
+        isUpdatingNotificationSwitches = true
+        if (::switchShowNotification.isInitialized) {
+            switchShowNotification.isChecked = checked
+        }
+        if (::switchContactNotification.isInitialized) {
+            switchContactNotification.isChecked = checked
+        }
+        isUpdatingNotificationSwitches = false
+    }
+
+    private fun handleNotificationToggle(isChecked: Boolean) {
+        VaultPrefs.setShowNotificationEnabled(this, isChecked)
+        syncNotificationSwitches(isChecked)
+
+        if (isChecked) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                return
+            }
+            SmsBackupForegroundService.refreshNotification(this)
+            Toast.makeText(this, "Top bar running notification ON.", Toast.LENGTH_SHORT).show()
+        } else {
+            SmsBackupForegroundService.refreshNotification(this)
+            Toast.makeText(this, "Top bar running notification OFF.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onPause() {
@@ -775,6 +850,8 @@ class MainActivity : AppCompatActivity() {
             runManualScanAndSync(triggerSync = VaultPrefs.isAutoBackupEnabled(this))
             if (VaultPrefs.isAnyBackgroundSyncEnabled(this)) {
                 SmsBackupForegroundService.startOrWake(this)
+                WatchdogReceiver.scheduleNext(this)
+                SmsSyncWorker.ensurePeriodicWatchdog(this)
             }
         }
     }

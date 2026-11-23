@@ -675,6 +675,15 @@
                             app:cornerRadius="10dp" />
                     </LinearLayout>
 
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switchShowNotification"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Show Running Notification (Top Bar)"
+                        android:textColor="#334155"
+                        android:textSize="13sp" />
+
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -797,6 +806,15 @@
                         android:text="Auto-Sync Contacts (Background)"
                         android:textColor="#0F172A"
                         android:textSize="14sp" />
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switchContactNotification"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Show Running Notification (Top Bar)"
+                        android:textColor="#334155"
+                        android:textSize="13sp" />
 
                     <LinearLayout
                         android:layout_width="match_parent"

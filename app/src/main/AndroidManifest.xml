@@ -65,5 +65,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- Periodic Doze-safe Watchdog to keep background backup alive -->
+        <receiver
+            android:name=".WatchdogReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
     </application>
 </manifest>

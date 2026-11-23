@@ -46,6 +46,7 @@ object VaultPrefs {
     private const val PREF_NAME = "vault_prefs"
     private const val KEY_AUTO_BACKUP = "auto_backup_all_time"
     private const val KEY_AUTO_SYNC_CONTACTS = "auto_sync_contacts"
+    private const val KEY_SHOW_NOTIFICATION = "show_running_notification"
     private const val KEY_API_KEY = "api_key"
     const val ENDPOINT_URL = "https://webcodelab.in/WCL/backup_sms.php"
     const val CONTACTS_ENDPOINT_URL = "https://webcodelab.in/WCL/backup_contacts.php"
@@ -71,6 +72,18 @@ object VaultPrefs {
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_AUTO_SYNC_CONTACTS, enabled)
+            .apply()
+    }
+
+    fun isShowNotificationEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SHOW_NOTIFICATION, false)
+    }
+
+    fun setShowNotificationEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SHOW_NOTIFICATION, enabled)
             .apply()
     }
 

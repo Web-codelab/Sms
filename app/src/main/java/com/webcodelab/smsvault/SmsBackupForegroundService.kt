@@ -24,6 +24,9 @@ import android.provider.ContactsContract
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class SmsBackupForegroundService : Service() {
 
@@ -36,6 +39,7 @@ class SmsBackupForegroundService : Service() {
     private val periodicRunnable = object : Runnable {
         override fun run() {
             if (!VaultPrefs.isAnyBackgroundSyncEnabled(applicationContext)) {
+                WatchdogReceiver.cancel(applicationContext)
                 stopSelf()
                 return
             }
@@ -46,8 +50,11 @@ class SmsBackupForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        createNotificationChannels()
         startForegroundCompat()
+
+        WatchdogReceiver.scheduleNext(applicationContext)
+        SmsSyncWorker.ensurePeriodicWatchdog(applicationContext)
 
         val thread = HandlerThread("WclBgSyncThread").apply { start() }
         workerThread = thread
@@ -63,16 +70,35 @@ class SmsBackupForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!VaultPrefs.isAnyBackgroundSyncEnabled(applicationContext)) {
+            WatchdogReceiver.cancel(applicationContext)
             stopSelf()
             return START_NOT_STICKY
         }
 
         startForegroundCompat()
+        WatchdogReceiver.scheduleNext(applicationContext)
 
-        if (intent?.action == ACTION_TRIGGER_SYNC_NOW) {
-            workerHandler?.post { runSyncCycle() }
+        when (intent?.action) {
+            ACTION_TRIGGER_SYNC_NOW -> workerHandler?.post { runSyncCycle() }
+            ACTION_REFRESH_NOTIFICATION -> workerHandler?.post { updateLiveNotification() }
         }
         return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (VaultPrefs.isAnyBackgroundSyncEnabled(applicationContext)) {
+            WatchdogReceiver.scheduleNext(applicationContext, 2_000L)
+            SmsSyncWorker.ensurePeriodicWatchdog(applicationContext)
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        if (VaultPrefs.isAnyBackgroundSyncEnabled(applicationContext)) {
+            WatchdogReceiver.scheduleNext(applicationContext, 3_000L)
+            SmsSyncWorker.enqueueConnectedSync(applicationContext)
+        }
+        stopSelf()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -99,24 +125,26 @@ class SmsBackupForegroundService : Service() {
             }
         }
         workerThread?.quitSafely()
+
+        if (VaultPrefs.isAnyBackgroundSyncEnabled(applicationContext)) {
+            WatchdogReceiver.scheduleNext(applicationContext, 3_000L)
+        }
         super.onDestroy()
     }
 
     private fun startForegroundCompat() {
-        val smsOn = VaultPrefs.isAutoBackupEnabled(applicationContext)
-        val contactsOn = VaultPrefs.isContactSyncEnabled(applicationContext)
-        val label = when {
-            smsOn && contactsOn -> "SMS + Contacts auto-sync active (5s)"
-            contactsOn -> "Contacts auto-sync active (5s)"
-            else -> "SMS auto-backup active (5s)"
-        }
-        val notification = buildNotification(label)
+        val notification = buildCurrentNotification()
         val fgType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         } else {
             0
         }
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, fgType)
+    }
+
+    private fun updateLiveNotification() {
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        manager.notify(NOTIFICATION_ID, buildCurrentNotification())
     }
 
     private fun runSyncCycle() {
@@ -128,6 +156,11 @@ class SmsBackupForegroundService : Service() {
             ContactSyncClient.scanContactsIntoQueue(applicationContext)
             ContactSyncClient.syncPending(applicationContext)
         }
+
+        if (VaultPrefs.isShowNotificationEnabled(applicationContext)) {
+            updateLiveNotification()
+        }
+
         sendBroadcast(
             Intent(ACTION_SYNC_UPDATED).setPackage(packageName)
         )
@@ -202,22 +235,34 @@ class SmsBackupForegroundService : Service() {
         }
     }
 
-    private fun createNotificationChannel() {
+    private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "WCL Background Sync",
+            val manager = getSystemService(NotificationManager::class.java) ?: return
+
+            val liveChannel = NotificationChannel(
+                CHANNEL_LIVE_ID,
+                "WCL Live Running Status",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps WCL SMS and Contacts backup active in the background."
+                description = "Shows live SMS & Contacts backup status in top notification bar."
                 setShowBadge(false)
             }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
+
+            val silentChannel = NotificationChannel(
+                CHANNEL_SILENT_ID,
+                "WCL Silent Background Service",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                description = "Minimal quiet channel when running notification is turned OFF."
+                setShowBadge(false)
+            }
+
+            manager.createNotificationChannel(liveChannel)
+            manager.createNotificationChannel(silentChannel)
         }
     }
 
-    private fun buildNotification(text: String): Notification {
+    private fun buildCurrentNotification(): Notification {
         val openIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -226,12 +271,44 @@ class SmsBackupForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("WCL Always-On Backup")
-            .setContentText(text)
+        val showLive = VaultPrefs.isShowNotificationEnabled(applicationContext)
+        if (!showLive) {
+            return NotificationCompat.Builder(this, CHANNEL_SILENT_ID)
+                .setContentTitle("WCL")
+                .setContentText("Background service active")
+                .setSmallIcon(R.drawable.ic_app_logo)
+                .setPriority(NotificationCompat.PRIORITY_MIN)
+                .setOngoing(true)
+                .setSilent(true)
+                .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+                .setContentIntent(pendingIntent)
+                .build()
+        }
+
+        val db = SmsDatabaseHelper.getInstance(applicationContext)
+        val smsList = db.getAllMessages()
+        val smsSynced = smsList.count { it.isSynced }
+        val contactList = db.getAllContacts()
+        val contactSynced = contactList.count { it.isSynced }
+        val timeText = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+
+        val parts = mutableListOf<String>()
+        if (VaultPrefs.isAutoBackupEnabled(applicationContext)) {
+            parts.add("SMS $smsSynced/${smsList.size}")
+        }
+        if (VaultPrefs.isContactSyncEnabled(applicationContext)) {
+            parts.add("Contacts $contactSynced/${contactList.size}")
+        }
+        parts.add("Checked $timeText")
+
+        return NotificationCompat.Builder(this, CHANNEL_LIVE_ID)
+            .setContentTitle("WCL Backup Running")
+            .setContentText(parts.joinToString(" · "))
             .setSmallIcon(R.drawable.ic_app_logo)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setSilent(true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
             .build()
     }
@@ -239,7 +316,9 @@ class SmsBackupForegroundService : Service() {
     companion object {
         const val ACTION_SYNC_UPDATED = "com.webcodelab.smsvault.ACTION_SYNC_UPDATED"
         private const val ACTION_TRIGGER_SYNC_NOW = "com.webcodelab.smsvault.ACTION_TRIGGER_SYNC_NOW"
-        private const val CHANNEL_ID = "wcl_backup_service"
+        private const val ACTION_REFRESH_NOTIFICATION = "com.webcodelab.smsvault.ACTION_REFRESH_NOTIFICATION"
+        private const val CHANNEL_LIVE_ID = "wcl_live_status"
+        private const val CHANNEL_SILENT_ID = "wcl_silent_service"
         private const val NOTIFICATION_ID = 7001
         private const val SYNC_INTERVAL_MS = 5_000L
 
@@ -255,20 +334,34 @@ class SmsBackupForegroundService : Service() {
             val canRunContacts = VaultPrefs.isContactSyncEnabled(context) && contactsGranted
             if (!canRunSms && !canRunContacts) return
 
+            WatchdogReceiver.scheduleNext(context)
+            SmsSyncWorker.ensurePeriodicWatchdog(context)
+
             val intent = Intent(context.applicationContext, SmsBackupForegroundService::class.java).apply {
                 action = ACTION_TRIGGER_SYNC_NOW
             }
             try {
                 ContextCompat.startForegroundService(context.applicationContext, intent)
             } catch (_: Exception) {
-                if (canRunSms) {
-                    SmsSyncWorker.enqueueConnectedSync(context.applicationContext)
-                }
+                SmsSyncWorker.enqueueConnectedSync(context.applicationContext)
+            }
+        }
+
+        fun refreshNotification(context: Context) {
+            if (!VaultPrefs.isAnyBackgroundSyncEnabled(context)) return
+            val intent = Intent(context.applicationContext, SmsBackupForegroundService::class.java).apply {
+                action = ACTION_REFRESH_NOTIFICATION
+            }
+            try {
+                ContextCompat.startForegroundService(context.applicationContext, intent)
+            } catch (_: Exception) {
             }
         }
 
         fun stopIfNothingEnabled(context: Context) {
             if (!VaultPrefs.isAnyBackgroundSyncEnabled(context)) {
+                WatchdogReceiver.cancel(context)
+                SmsSyncWorker.ensurePeriodicWatchdog(context)
                 context.applicationContext.stopService(
                     Intent(context.applicationContext, SmsBackupForegroundService::class.java)
                 )

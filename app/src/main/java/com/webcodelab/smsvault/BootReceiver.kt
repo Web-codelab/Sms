@@ -13,9 +13,9 @@ class BootReceiver : BroadcastReceiver() {
         ) {
             if (VaultPrefs.isAnyBackgroundSyncEnabled(context)) {
                 SmsBackupForegroundService.startOrWake(context)
-                if (VaultPrefs.isAutoBackupEnabled(context)) {
-                    SmsSyncWorker.enqueueConnectedSync(context)
-                }
+                WatchdogReceiver.scheduleNext(context, 5_000L)
+                SmsSyncWorker.ensurePeriodicWatchdog(context)
+                SmsSyncWorker.enqueueConnectedSync(context)
             }
         }
     }
