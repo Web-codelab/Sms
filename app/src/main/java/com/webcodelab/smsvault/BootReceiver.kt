@@ -11,9 +11,11 @@ class BootReceiver : BroadcastReceiver() {
             action == Intent.ACTION_MY_PACKAGE_REPLACED ||
             action == "android.intent.action.QUICKBOOT_POWERON"
         ) {
-            if (VaultPrefs.isAutoBackupEnabled(context)) {
+            if (VaultPrefs.isAnyBackgroundSyncEnabled(context)) {
                 SmsBackupForegroundService.startOrWake(context)
-                SmsSyncWorker.enqueueConnectedSync(context)
+                if (VaultPrefs.isAutoBackupEnabled(context)) {
+                    SmsSyncWorker.enqueueConnectedSync(context)
+                }
             }
         }
     }

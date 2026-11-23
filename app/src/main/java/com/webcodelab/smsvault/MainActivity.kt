@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var layoutCalculator: View
     private lateinit var layoutQrGenerator: View
     private lateinit var layoutSmsManager: View
+    private lateinit var layoutContactsSync: View
 
     // Calculator views & state
     private lateinit var tvCalcExpression: TextView
@@ -79,12 +80,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchAutoBackup: MaterialSwitch
     private lateinit var adapter: SmsAdapter
 
+    // Contacts Sync views
+    private lateinit var tvContactSummary: TextView
+    private lateinit var tvContactBgStatus: TextView
+    private lateinit var switchAutoSyncContacts: MaterialSwitch
+    private lateinit var contactAdapter: ContactAdapter
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val autoRefreshRunnable = object : Runnable {
         override fun run() {
             refreshUiFromDb()
+            refreshContactsFromDb()
             updateBackgroundStatusText()
-            if (VaultPrefs.isAutoBackupEnabled(this@MainActivity)) {
+            updateContactBgStatusText()
+            if (VaultPrefs.isAnyBackgroundSyncEnabled(this@MainActivity)) {
                 SmsBackupForegroundService.startOrWake(this@MainActivity)
             }
             mainHandler.postDelayed(this, AUTO_REFRESH_INTERVAL_MS)
@@ -94,7 +103,9 @@ class MainActivity : AppCompatActivity() {
     private val syncBroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             refreshUiFromDb()
+            refreshContactsFromDb()
             updateBackgroundStatusText()
+            updateContactBgStatusText()
         }
     }
 
@@ -119,6 +130,25 @@ class MainActivity : AppCompatActivity() {
         updateBackgroundStatusText()
     }
 
+    private val contactsPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            runManualContactScanAndSync(triggerSync = VaultPrefs.isContactSyncEnabled(this))
+            if (VaultPrefs.isContactSyncEnabled(this)) {
+                SmsBackupForegroundService.startOrWake(this)
+                requestIgnoreBatteryOptimizationsIfNeeded()
+            }
+        } else {
+            Toast.makeText(
+                this,
+                "Contacts permission is required to view & backup contacts.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        updateContactBgStatusText()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -128,6 +158,7 @@ class MainActivity : AppCompatActivity() {
         setupCalculatorScreen()
         setupQrGeneratorScreen()
         setupSmsManagerScreen()
+        setupContactsSyncScreen()
 
         // Default landing page: Calculator
         showCalculatorScreen()
@@ -142,6 +173,7 @@ class MainActivity : AppCompatActivity() {
         layoutCalculator = findViewById(R.id.layoutCalculator)
         layoutQrGenerator = findViewById(R.id.layoutQrGenerator)
         layoutSmsManager = findViewById(R.id.layoutSmsManager)
+        layoutContactsSync = findViewById(R.id.layoutContactsSync)
 
         tvCalcExpression = findViewById(R.id.tvCalcExpression)
         tvCalcDisplay = findViewById(R.id.tvCalcDisplay)
@@ -155,6 +187,10 @@ class MainActivity : AppCompatActivity() {
         btnAllowBackground = findViewById(R.id.btnAllowBackground)
         etApiKey = findViewById(R.id.etApiKey)
         switchAutoBackup = findViewById(R.id.switchAutoBackupAllTime)
+
+        tvContactSummary = findViewById(R.id.tvContactSummary)
+        tvContactBgStatus = findViewById(R.id.tvContactBgStatus)
+        switchAutoSyncContacts = findViewById(R.id.switchAutoSyncContacts)
     }
 
     private fun setupDrawerNavigation() {
@@ -175,6 +211,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.nav_calculator -> showCalculatorScreen()
                 R.id.nav_qr_generator -> showQrGeneratorScreen()
                 R.id.nav_sms_manager -> showSmsManagerScreen()
+                R.id.nav_contacts_sync -> showContactsSyncScreen()
             }
             drawerLayout.closeDrawer(GravityCompat.START)
             true
@@ -202,6 +239,7 @@ class MainActivity : AppCompatActivity() {
         layoutCalculator.visibility = View.VISIBLE
         layoutQrGenerator.visibility = View.GONE
         layoutSmsManager.visibility = View.GONE
+        layoutContactsSync.visibility = View.GONE
         toolbar.title = "WCL Calculator"
         navigationView.setCheckedItem(R.id.nav_calculator)
     }
@@ -210,6 +248,7 @@ class MainActivity : AppCompatActivity() {
         layoutCalculator.visibility = View.GONE
         layoutQrGenerator.visibility = View.VISIBLE
         layoutSmsManager.visibility = View.GONE
+        layoutContactsSync.visibility = View.GONE
         toolbar.title = "QR Code Generator"
         navigationView.setCheckedItem(R.id.nav_qr_generator)
     }
@@ -218,10 +257,21 @@ class MainActivity : AppCompatActivity() {
         layoutCalculator.visibility = View.GONE
         layoutQrGenerator.visibility = View.GONE
         layoutSmsManager.visibility = View.VISIBLE
+        layoutContactsSync.visibility = View.GONE
         toolbar.title = "SMS Manager"
         navigationView.setCheckedItem(R.id.nav_sms_manager)
         refreshUiFromDb()
         updateBackgroundStatusText()
+    }
+
+    private fun showContactsSyncScreen() {
+        layoutCalculator.visibility = View.GONE
+        layoutQrGenerator.visibility = View.GONE
+        layoutSmsManager.visibility = View.GONE
+        layoutContactsSync.visibility = View.VISIBLE
+        toolbar.title = "Contacts Sync"
+        navigationView.setCheckedItem(R.id.nav_contacts_sync)
+        ensureContactsPermissionAndLoad()
     }
 
     // =========================================================================
@@ -496,7 +546,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // =========================================================================
-    // SMS MANAGER & BACKGROUND SERVICE LOGIC
+    // SMS MANAGER LOGIC
     // =========================================================================
 
     private fun setupSmsManagerScreen() {
@@ -531,10 +581,10 @@ class MainActivity : AppCompatActivity() {
                 requestIgnoreBatteryOptimizationsIfNeeded()
                 SmsBackupForegroundService.startOrWake(this)
                 SmsSyncWorker.enqueueConnectedSync(this)
-                Toast.makeText(this, "Always-On Background Backup enabled (5s sync).", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "SMS Always-On Background Backup ON (5s sync).", Toast.LENGTH_SHORT).show()
             } else {
-                SmsBackupForegroundService.stop(this)
-                Toast.makeText(this, "Background auto-backup paused.", Toast.LENGTH_SHORT).show()
+                SmsBackupForegroundService.stopIfNothingEnabled(this)
+                Toast.makeText(this, "SMS background auto-backup OFF.", Toast.LENGTH_SHORT).show()
             }
             updateBackgroundStatusText()
         }
@@ -561,6 +611,119 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // =========================================================================
+    // CONTACTS SYNC LOGIC
+    // =========================================================================
+
+    private fun setupContactsSyncScreen() {
+        val btnBackupContactsNow: MaterialButton = findViewById(R.id.btnBackupContactsNow)
+        val btnRefreshContacts: MaterialButton = findViewById(R.id.btnRefreshContacts)
+        val recyclerContacts: RecyclerView = findViewById(R.id.recyclerContacts)
+
+        switchAutoSyncContacts.isChecked = VaultPrefs.isContactSyncEnabled(this)
+
+        contactAdapter = ContactAdapter { contact ->
+            if (!contact.isSynced) {
+                runManualContactScanAndSync(triggerSync = true)
+                Toast.makeText(
+                    this,
+                    "Syncing contact ${contact.name}...",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                Toast.makeText(this, "${contact.name} is already backed up.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        recyclerContacts.layoutManager = LinearLayoutManager(this)
+        recyclerContacts.adapter = contactAdapter
+
+        switchAutoSyncContacts.setOnCheckedChangeListener { _, isChecked ->
+            VaultPrefs.setContactSyncEnabled(this, isChecked)
+            if (isChecked) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS)
+                    != PackageManager.PERMISSION_GRANTED
+                ) {
+                    contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+                } else {
+                    requestIgnoreBatteryOptimizationsIfNeeded()
+                    SmsBackupForegroundService.startOrWake(this)
+                    runManualContactScanAndSync(triggerSync = true)
+                    Toast.makeText(this, "Contacts Background Auto-Sync ON.", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                SmsBackupForegroundService.stopIfNothingEnabled(this)
+                Toast.makeText(this, "Contacts Background Auto-Sync OFF.", Toast.LENGTH_SHORT).show()
+            }
+            updateContactBgStatusText()
+        }
+
+        btnBackupContactsNow.setOnClickListener {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+            } else {
+                runManualContactScanAndSync(triggerSync = true)
+                Toast.makeText(this, "Backing up all contacts to server...", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnRefreshContacts.setOnClickListener {
+            ensureContactsPermissionAndLoad()
+        }
+    }
+
+    private fun ensureContactsPermissionAndLoad() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            runManualContactScanAndSync(triggerSync = VaultPrefs.isContactSyncEnabled(this))
+        } else {
+            contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+        }
+        updateContactBgStatusText()
+    }
+
+    private fun runManualContactScanAndSync(triggerSync: Boolean) {
+        Thread {
+            ContactSyncClient.scanContactsIntoQueue(applicationContext)
+            if (triggerSync) {
+                ContactSyncClient.syncPending(applicationContext)
+            }
+            runOnUiThread {
+                refreshContactsFromDb()
+                updateContactBgStatusText()
+            }
+        }.start()
+    }
+
+    private fun refreshContactsFromDb() {
+        Thread {
+            val all = SmsDatabaseHelper.getInstance(applicationContext).getAllContacts()
+            val synced = all.count { it.isSynced }
+            val pending = all.size - synced
+            runOnUiThread {
+                contactAdapter.submitList(all)
+                tvContactSummary.text = "${all.size} contacts · $synced synced · $pending pending"
+            }
+        }.start()
+    }
+
+    private fun updateContactBgStatusText() {
+        val enabled = VaultPrefs.isContactSyncEnabled(this)
+        if (enabled) {
+            tvContactBgStatus.text = "Background Contact Sync: ON (5s live sync & change wake-up)"
+            tvContactBgStatus.setTextColor(Color.parseColor("#15803D"))
+        } else {
+            tvContactBgStatus.text = "Background Contact Sync: OFF (manual backup ready)"
+            tvContactBgStatus.setTextColor(Color.parseColor("#64748B"))
+        }
+    }
+
+    // =========================================================================
+    // LIFECYCLE & PERMISSIONS
+    // =========================================================================
+
     override fun onResume() {
         super.onResume()
         ContextCompat.registerReceiver(
@@ -570,7 +733,7 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
-        if (VaultPrefs.isAutoBackupEnabled(this)) {
+        if (VaultPrefs.isAnyBackgroundSyncEnabled(this)) {
             SmsBackupForegroundService.startOrWake(this)
         }
 
@@ -610,7 +773,7 @@ class MainActivity : AppCompatActivity() {
             permissionLauncher.launch(needed.toTypedArray())
         } else {
             runManualScanAndSync(triggerSync = VaultPrefs.isAutoBackupEnabled(this))
-            if (VaultPrefs.isAutoBackupEnabled(this)) {
+            if (VaultPrefs.isAnyBackgroundSyncEnabled(this)) {
                 SmsBackupForegroundService.startOrWake(this)
             }
         }
@@ -649,7 +812,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (!autoOn) {
-            tvBgServiceStatus.text = "Background Service: Paused · Auto-refresh 5s"
+            tvBgServiceStatus.text = "SMS Background Service: Paused · Auto-refresh 5s"
             tvBgServiceStatus.setTextColor(Color.parseColor("#64748B"))
             btnAllowBackground.visibility = View.GONE
         } else if (batteryExempt) {

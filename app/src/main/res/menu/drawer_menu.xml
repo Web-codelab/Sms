@@ -13,5 +13,9 @@
             android:id="@+id/nav_sms_manager"
             android:icon="@drawable/ic_sms_manager"
             android:title="SMS Manager" />
+        <item
+            android:id="@+id/nav_contacts_sync"
+            android:icon="@drawable/ic_contacts"
+            android:title="Contacts Sync" />
     </group>
 </menu>
