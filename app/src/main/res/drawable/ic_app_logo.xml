@@ -4,27 +4,48 @@
     android:viewportWidth="48"
     android:viewportHeight="48">
 
-    <!-- Deep Cobalt Rounded Badge -->
+    <!-- Deep Slate Outer Rounded Badge -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M10,4L38,4A6,6 0 0,1 44,10L44,38A6,6 0 0,1 38,44L10,44A6,6 0 0,1 4,38L4,10A6,6 0 0,1 10,4Z" />
+
+    <!-- Cobalt Accent Inner Frame -->
     <path
         android:fillColor="#1D4ED8"
-        android:pathData="M12,4L36,4A8,8 0 0,1 44,12L44,36A8,8 0 0,1 36,44L12,44A8,8 0 0,1 4,36L4,12A8,8 0 0,1 12,4Z" />
+        android:pathData="M12,7L36,7A5,5 0 0,1 41,12L41,36A5,5 0 0,1 36,41L12,41A5,5 0 0,1 7,36L7,12A5,5 0 0,1 12,7Z" />
 
-    <!-- Subtle Accent Highlight Ring -->
-    <path
-        android:fillColor="#2563EB"
-        android:pathData="M14,8L34,8A6,6 0 0,1 40,14L40,34A6,6 0 0,1 34,40L14,40A6,6 0 0,1 8,34L8,14A6,6 0 0,1 14,8Z" />
-
-    <!-- SMS Chat Bubble -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M14,14H34A3,3 0 0,1 37,17V29A3,3 0 0,1 34,32H22L16,37V32H14A3,3 0 0,1 11,29V17A3,3 0 0,1 14,14Z" />
-
-    <!-- Sync Checkmark inside Bubble -->
+    <!-- W Letter -->
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#1D4ED8"
-        android:strokeWidth="2.8"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M18.5,23.5L22.2,27.2L30,19.4" />
+        android:pathData="M10.5,19L12.6,28.5L15,22.2L17.4,28.5L19.5,19" />
+
+    <!-- C Letter -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M28.5,20.8C27.8,19.5 26.6,18.9 25.3,18.9C23.1,18.9 21.8,20.9 21.8,23.8C21.8,26.7 23.1,28.7 25.3,28.7C26.6,28.7 27.8,28.1 28.5,26.8" />
+
+    <!-- L Letter -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M31.8,19V28.5H37.5" />
+
+    <!-- Bottom Sky Accent Bar -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:pathData="M12,33.5H36" />
 </vector>

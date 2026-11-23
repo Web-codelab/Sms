@@ -43,6 +43,7 @@ class SmsReceiver : BroadcastReceiver() {
                 }
 
                 if (VaultPrefs.isAutoBackupEnabled(appContext)) {
+                    SmsBackupForegroundService.startOrWake(appContext)
                     SmsSyncWorker.enqueueConnectedSync(appContext)
                 }
             } finally {

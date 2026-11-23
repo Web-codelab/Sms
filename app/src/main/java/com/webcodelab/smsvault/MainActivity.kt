@@ -1,7 +1,12 @@
 package com.webcodelab.smsvault
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -9,7 +14,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
 import android.provider.MediaStore
+import android.provider.Settings
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
@@ -36,10 +45,6 @@ import java.io.FileOutputStream
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 
 class MainActivity : AppCompatActivity() {
 
@@ -68,17 +73,42 @@ class MainActivity : AppCompatActivity() {
 
     // SMS Manager views
     private lateinit var tvSyncSummary: TextView
+    private lateinit var tvBgServiceStatus: TextView
+    private lateinit var btnAllowBackground: MaterialButton
     private lateinit var etApiKey: TextInputEditText
     private lateinit var switchAutoBackup: MaterialSwitch
     private lateinit var adapter: SmsAdapter
 
-    private val smsPermissionLauncher = registerForActivityResult(
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val autoRefreshRunnable = object : Runnable {
+        override fun run() {
+            refreshUiFromDb()
+            updateBackgroundStatusText()
+            if (VaultPrefs.isAutoBackupEnabled(this@MainActivity)) {
+                SmsBackupForegroundService.startOrWake(this@MainActivity)
+            }
+            mainHandler.postDelayed(this, AUTO_REFRESH_INTERVAL_MS)
+        }
+    }
+
+    private val syncBroadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            refreshUiFromDb()
+            updateBackgroundStatusText()
+        }
+    }
+
+    private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
         val readOk = grants[Manifest.permission.READ_SMS] == true
         val recvOk = grants[Manifest.permission.RECEIVE_SMS] == true
         if (readOk && recvOk) {
-            importDeviceInbox(triggerSync = VaultPrefs.isAutoBackupEnabled(this))
+            runManualScanAndSync(triggerSync = VaultPrefs.isAutoBackupEnabled(this))
+            if (VaultPrefs.isAutoBackupEnabled(this)) {
+                SmsBackupForegroundService.startOrWake(this)
+                requestIgnoreBatteryOptimizationsIfNeeded()
+            }
         } else {
             Toast.makeText(
                 this,
@@ -86,6 +116,7 @@ class MainActivity : AppCompatActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
+        updateBackgroundStatusText()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,7 +131,7 @@ class MainActivity : AppCompatActivity() {
 
         // Default landing page: Calculator
         showCalculatorScreen()
-        ensureSmsPermissions()
+        ensureRuntimePermissions()
     }
 
     private fun bindViews() {
@@ -120,6 +151,8 @@ class MainActivity : AppCompatActivity() {
         tvQrPreviewLabel = findViewById(R.id.tvQrPreviewLabel)
 
         tvSyncSummary = findViewById(R.id.tvSyncSummary)
+        tvBgServiceStatus = findViewById(R.id.tvBgServiceStatus)
+        btnAllowBackground = findViewById(R.id.btnAllowBackground)
         etApiKey = findViewById(R.id.etApiKey)
         switchAutoBackup = findViewById(R.id.switchAutoBackupAllTime)
     }
@@ -169,7 +202,7 @@ class MainActivity : AppCompatActivity() {
         layoutCalculator.visibility = View.VISIBLE
         layoutQrGenerator.visibility = View.GONE
         layoutSmsManager.visibility = View.GONE
-        toolbar.title = "Calculator"
+        toolbar.title = "WCL Calculator"
         navigationView.setCheckedItem(R.id.nav_calculator)
     }
 
@@ -188,6 +221,7 @@ class MainActivity : AppCompatActivity() {
         toolbar.title = "SMS Manager"
         navigationView.setCheckedItem(R.id.nav_sms_manager)
         refreshUiFromDb()
+        updateBackgroundStatusText()
     }
 
     // =========================================================================
@@ -394,7 +428,6 @@ class MainActivity : AppCompatActivity() {
             saveCurrentQrToGallery()
         }
 
-        // Generate initial default QR code
         generateQrBitmap(etQrInput.text?.toString()?.trim().orEmpty().ifEmpty { "https://webcodelab.in" })
     }
 
@@ -436,7 +469,7 @@ class MainActivity : AppCompatActivity() {
                 val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
                     put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/SmsVaultQR")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/WclQR")
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
                 val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
@@ -447,7 +480,7 @@ class MainActivity : AppCompatActivity() {
                     values.clear()
                     values.put(MediaStore.Images.Media.IS_PENDING, 0)
                     contentResolver.update(uri, values, null, null)
-                    Toast.makeText(this, "Saved to Pictures/SmsVaultQR/$fileName", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Saved to Pictures/WclQR/$fileName", Toast.LENGTH_LONG).show()
                 }
             } else {
                 val dir = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir
@@ -463,7 +496,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // =========================================================================
-    // SMS MANAGER LOGIC
+    // SMS MANAGER & BACKGROUND SERVICE LOGIC
     // =========================================================================
 
     private fun setupSmsManagerScreen() {
@@ -477,10 +510,11 @@ class MainActivity : AppCompatActivity() {
 
         adapter = SmsAdapter { smsItem ->
             if (!smsItem.isSynced) {
+                SmsBackupForegroundService.startOrWake(this)
                 SmsSyncWorker.enqueueConnectedSync(this)
                 Toast.makeText(
                     this,
-                    "Queued SMS from ${smsItem.sender} for backup.",
+                    "Syncing SMS from ${smsItem.sender}...",
                     Toast.LENGTH_SHORT
                 ).show()
             } else {
@@ -493,8 +527,16 @@ class MainActivity : AppCompatActivity() {
         switchAutoBackup.setOnCheckedChangeListener { _, isChecked ->
             VaultPrefs.setAutoBackupEnabled(this, isChecked)
             if (isChecked) {
+                ensureRuntimePermissions()
+                requestIgnoreBatteryOptimizationsIfNeeded()
+                SmsBackupForegroundService.startOrWake(this)
                 SmsSyncWorker.enqueueConnectedSync(this)
+                Toast.makeText(this, "Always-On Background Backup enabled (5s sync).", Toast.LENGTH_SHORT).show()
+            } else {
+                SmsBackupForegroundService.stop(this)
+                Toast.makeText(this, "Background auto-backup paused.", Toast.LENGTH_SHORT).show()
             }
+            updateBackgroundStatusText()
         }
 
         btnSaveKey.setOnClickListener {
@@ -506,83 +548,131 @@ class MainActivity : AppCompatActivity() {
         btnBackupAllNow.setOnClickListener {
             val apiKey = etApiKey.text?.toString().orEmpty()
             VaultPrefs.saveApiKey(this, apiKey)
-            importDeviceInbox(triggerSync = true)
+            runManualScanAndSync(triggerSync = true)
             Toast.makeText(this, "Backing up all SMS to server...", Toast.LENGTH_SHORT).show()
         }
 
         btnRefreshInbox.setOnClickListener {
-            refreshUiFromDb()
+            runManualScanAndSync(triggerSync = VaultPrefs.isAutoBackupEnabled(this))
+        }
+
+        btnAllowBackground.setOnClickListener {
+            requestIgnoreBatteryOptimizationsIfNeeded(forcePrompt = true)
         }
     }
 
     override fun onResume() {
         super.onResume()
-        refreshUiFromDb()
+        ContextCompat.registerReceiver(
+            this,
+            syncBroadcastReceiver,
+            IntentFilter(SmsBackupForegroundService.ACTION_SYNC_UPDATED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
+        if (VaultPrefs.isAutoBackupEnabled(this)) {
+            SmsBackupForegroundService.startOrWake(this)
+        }
+
+        mainHandler.removeCallbacks(autoRefreshRunnable)
+        mainHandler.post(autoRefreshRunnable)
     }
 
-    private fun ensureSmsPermissions() {
-        val readOk = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
-        val recvOk = ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
-        if (readOk && recvOk) {
-            importDeviceInbox(triggerSync = VaultPrefs.isAutoBackupEnabled(this))
-        } else {
-            smsPermissionLauncher.launch(
-                arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)
-            )
+    override fun onPause() {
+        super.onPause()
+        mainHandler.removeCallbacks(autoRefreshRunnable)
+        try {
+            unregisterReceiver(syncBroadcastReceiver)
+        } catch (_: Exception) {
         }
     }
 
-    private fun importDeviceInbox(triggerSync: Boolean) {
-        Thread {
-            val list = mutableListOf<SmsItem>()
-            val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-                timeZone = TimeZone.getTimeZone("UTC")
-            }
+    private fun ensureRuntimePermissions() {
+        val needed = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.READ_SMS)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.RECEIVE_SMS)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
 
+        if (needed.isNotEmpty()) {
+            permissionLauncher.launch(needed.toTypedArray())
+        } else {
+            runManualScanAndSync(triggerSync = VaultPrefs.isAutoBackupEnabled(this))
+            if (VaultPrefs.isAutoBackupEnabled(this)) {
+                SmsBackupForegroundService.startOrWake(this)
+            }
+        }
+    }
+
+    @SuppressLint("BatteryLife")
+    private fun requestIgnoreBatteryOptimizationsIfNeeded(forcePrompt: Boolean = false) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) {
+            if (forcePrompt) {
+                Toast.makeText(this, "Always-On Background Battery Exemption is already active.", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        try {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+        } catch (_: Exception) {
             try {
-                contentResolver.query(
-                    Uri.parse("content://sms/inbox"),
-                    arrayOf("address", "body", "date"),
-                    null,
-                    null,
-                    "date DESC"
-                )?.use { cursor ->
-                    val idxAddress = cursor.getColumnIndexOrThrow("address")
-                    val idxBody = cursor.getColumnIndexOrThrow("body")
-                    val idxDate = cursor.getColumnIndexOrThrow("date")
-                    while (cursor.moveToNext()) {
-                        val sender = cursor.getString(idxAddress) ?: "Unknown"
-                        val body = cursor.getString(idxBody) ?: ""
-                        val receivedIso = isoFmt.format(Date(cursor.getLong(idxDate)))
-                        val hash = SmsHashUtil.sha256(sender, body, receivedIso)
-                        list.add(
-                            SmsItem(
-                                id = 0,
-                                sender = sender,
-                                body = body,
-                                receivedAtIso = receivedIso,
-                                smsHash = hash,
-                                isSynced = false,
-                                syncedAtIso = null
-                            )
-                        )
-                    }
-                }
-            } catch (_: SecurityException) {
-                // Permission denied
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (_: Exception) {
             }
+        }
+    }
 
-            val db = SmsDatabaseHelper.getInstance(applicationContext)
-            if (list.isNotEmpty()) {
-                db.insertAllIgnore(list)
-            }
+    private fun updateBackgroundStatusText() {
+        val autoOn = VaultPrefs.isAutoBackupEnabled(this)
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val batteryExempt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            pm?.isIgnoringBatteryOptimizations(packageName) == true
+        } else {
+            true
+        }
 
+        if (!autoOn) {
+            tvBgServiceStatus.text = "Background Service: Paused · Auto-refresh 5s"
+            tvBgServiceStatus.setTextColor(Color.parseColor("#64748B"))
+            btnAllowBackground.visibility = View.GONE
+        } else if (batteryExempt) {
+            tvBgServiceStatus.text = "Background Wake-Up: Always-On · 5s Auto-Sync"
+            tvBgServiceStatus.setTextColor(Color.parseColor("#15803D"))
+            btnAllowBackground.visibility = View.GONE
+        } else {
+            tvBgServiceStatus.text = "Background Active (Allow Battery Exemption for 24/7 wake-up)"
+            tvBgServiceStatus.setTextColor(Color.parseColor("#B45309"))
+            btnAllowBackground.visibility = View.VISIBLE
+        }
+    }
+
+    private fun runManualScanAndSync(triggerSync: Boolean) {
+        Thread {
+            SmsSyncClient.scanInboxIntoQueue(applicationContext)
             if (triggerSync) {
+                SmsSyncClient.syncPending(applicationContext)
                 SmsSyncWorker.enqueueConnectedSync(applicationContext)
             }
-
             runOnUiThread {
                 refreshUiFromDb()
+                updateBackgroundStatusText()
             }
         }.start()
     }
@@ -594,8 +684,12 @@ class MainActivity : AppCompatActivity() {
             val pending = all.size - synced
             runOnUiThread {
                 adapter.submitList(all)
-                tvSyncSummary.text = "${all.size} SMS total · $synced synced · $pending pending"
+                tvSyncSummary.text = "${all.size} SMS total · $synced synced · $pending pending (5s auto)"
             }
         }.start()
+    }
+
+    companion object {
+        private const val AUTO_REFRESH_INTERVAL_MS = 5_000L
     }
 }
