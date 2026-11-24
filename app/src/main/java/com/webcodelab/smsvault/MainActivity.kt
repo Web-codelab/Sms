@@ -4,6 +4,8 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.admin.DevicePolicyManager
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -121,7 +123,9 @@ class MainActivity : AppCompatActivity() {
     // Uninstall Protection views
     private lateinit var tvProtectionStatus: TextView
     private lateinit var tvKeyConfiguredStatus: TextView
+    private lateinit var tvDeviceOwnerGuide: TextView
     private lateinit var tvVerifyFeedback: TextView
+    private lateinit var btnCopyDeviceOwnerCmd: MaterialButton
     private lateinit var btnEnableProtection: MaterialButton
     private lateinit var btnVerifyDisableProtection: MaterialButton
     private lateinit var btnVerifyAndUninstall: MaterialButton
@@ -322,7 +326,9 @@ class MainActivity : AppCompatActivity() {
 
         tvProtectionStatus = findViewById(R.id.tvProtectionStatus)
         tvKeyConfiguredStatus = findViewById(R.id.tvKeyConfiguredStatus)
+        tvDeviceOwnerGuide = findViewById(R.id.tvDeviceOwnerGuide)
         tvVerifyFeedback = findViewById(R.id.tvVerifyFeedback)
+        btnCopyDeviceOwnerCmd = findViewById(R.id.btnCopyDeviceOwnerCmd)
         btnEnableProtection = findViewById(R.id.btnEnableProtection)
         btnVerifyDisableProtection = findViewById(R.id.btnVerifyDisableProtection)
         btnVerifyAndUninstall = findViewById(R.id.btnVerifyAndUninstall)
@@ -1273,6 +1279,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUninstallProtectionScreen() {
+        btnCopyDeviceOwnerCmd.setOnClickListener {
+            val cmd = "adb shell dpm set-device-owner ${packageName}/.WclDeviceAdminReceiver"
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            clipboard?.setPrimaryClip(ClipData.newPlainText("WCL Device Owner Command", cmd))
+            Toast.makeText(
+                this,
+                "Device Owner ADB command copied to clipboard.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
         btnEnableProtection.setOnClickListener {
             if (!SecurityKeyStore.isUninstallBlockedByKeyRule(this)) {
                 Toast.makeText(
@@ -1363,6 +1380,20 @@ class MainActivity : AppCompatActivity() {
                 btnEnableProtection.isEnabled = true
                 btnEnableProtection.text = "Enable Uninstall Protection"
             }
+        }
+
+        if (deviceOwner) {
+            tvDeviceOwnerGuide.text =
+                "Device Owner Mode: ACTIVE — Android Settings 'Deactivate & uninstall' is locked by OS while Valid API Key is present."
+            tvDeviceOwnerGuide.setBackgroundColor(Color.parseColor("#ECFDF5"))
+            tvDeviceOwnerGuide.setTextColor(Color.parseColor("#166534"))
+            btnCopyDeviceOwnerCmd.visibility = View.GONE
+        } else {
+            tvDeviceOwnerGuide.text =
+                "Standard Phone Mode: Normal Device Admin allows Android Settings 'Deactivate & uninstall'. To permanently block Settings deactivation until API Key removal, set WCL as Device Owner via ADB:\nadb shell dpm set-device-owner ${packageName}/.WclDeviceAdminReceiver"
+            tvDeviceOwnerGuide.setBackgroundColor(Color.parseColor("#EFF6FF"))
+            tvDeviceOwnerGuide.setTextColor(Color.parseColor("#1E3A8A"))
+            btnCopyDeviceOwnerCmd.visibility = View.VISIBLE
         }
 
         when (keyState) {

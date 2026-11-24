@@ -11,6 +11,7 @@ class BootReceiver : BroadcastReceiver() {
             action == Intent.ACTION_MY_PACKAGE_REPLACED ||
             action == "android.intent.action.QUICKBOOT_POWERON"
         ) {
+            WclDeviceAdminReceiver.syncProtectionWithKeyRule(context)
             if (VaultPrefs.isAnyBackgroundSyncEnabled(context)) {
                 SmsBackupForegroundService.startOrWake(context)
                 WatchdogReceiver.scheduleNext(context, 5_000L)

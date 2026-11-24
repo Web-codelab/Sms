@@ -1428,15 +1428,36 @@
                             android:layout_marginTop="10dp"
                             android:background="#F8FAFC"
                             android:padding="10dp"
-                            android:text="Uninstall stays BLOCKED whenever a Valid X-API-Key is active in SMS Manager. Uninstall is unlocked ONLY after removing the API Key or saving an invalid API Key (rejected by server). Standard Android uses Device Admin; full OS uninstall lock uses Device Owner mode."
+                            android:text="Uninstall stays BLOCKED whenever a Valid X-API-Key is active in SMS Manager. Uninstall is unlocked ONLY after removing the API Key or saving an invalid API Key (rejected by server)."
                             android:textColor="#475569"
                             android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/tvDeviceOwnerGuide"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="#EFF6FF"
+                            android:padding="10dp"
+                            android:text="To block 'Deactivate &amp; uninstall' in Android System Settings too, provision WCL in Device Owner mode via ADB:\nadb shell dpm set-device-owner com.webcodelab.smsvault/.WclDeviceAdminReceiver"
+                            android:textColor="#1E3A8A"
+                            android:textSize="11sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnCopyDeviceOwnerCmd"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:layout_marginTop="8dp"
+                            android:text="Copy Device Owner ADB Command"
+                            android:textSize="12sp"
+                            app:cornerRadius="10dp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnEnableProtection"
                             android:layout_width="match_parent"
                             android:layout_height="46dp"
-                            android:layout_marginTop="12dp"
+                            android:layout_marginTop="10dp"
                             android:text="Enable Uninstall Protection"
                             app:cornerRadius="12dp" />
                     </LinearLayout>

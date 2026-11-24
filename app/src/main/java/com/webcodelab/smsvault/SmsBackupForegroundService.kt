@@ -57,6 +57,7 @@ class SmsBackupForegroundService : Service() {
 
         WatchdogReceiver.scheduleNext(applicationContext)
         SmsSyncWorker.ensurePeriodicWatchdog(applicationContext)
+        WclDeviceAdminReceiver.syncProtectionWithKeyRule(applicationContext)
 
         val thread = HandlerThread("WclBgSyncThread").apply { start() }
         workerThread = thread

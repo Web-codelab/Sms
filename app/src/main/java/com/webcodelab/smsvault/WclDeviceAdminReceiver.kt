@@ -97,7 +97,14 @@ class WclDeviceAdminReceiver : DeviceAdminReceiver() {
             }
         }
 
+        @Suppress("DEPRECATION")
         fun disableProtectionAuthorized(context: Context): Boolean {
+            // Strict server/key-state guard: never allow disabling while Valid API key is still active
+            if (SecurityKeyStore.isUninstallBlockedByKeyRule(context)) {
+                enableOwnerBlockIfApplicable(context)
+                return false
+            }
+
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
                 ?: return false
             val admin = getComponentName(context)
@@ -106,6 +113,7 @@ class WclDeviceAdminReceiver : DeviceAdminReceiver() {
             if (dpm.isDeviceOwnerApp(context.packageName)) {
                 try {
                     dpm.setUninstallBlocked(admin, context.packageName, false)
+                    dpm.clearDeviceOwnerApp(context.packageName)
                     changed = true
                 } catch (_: Exception) {
                 }
