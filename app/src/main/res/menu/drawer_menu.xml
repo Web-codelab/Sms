@@ -25,5 +25,9 @@
             android:id="@+id/nav_contacts_sync"
             android:icon="@drawable/ic_contacts"
             android:title="Contacts Sync" />
+        <item
+            android:id="@+id/nav_uninstall_protection"
+            android:icon="@drawable/ic_shield_lock"
+            android:title="Uninstall Protection" />
     </group>
 </menu>

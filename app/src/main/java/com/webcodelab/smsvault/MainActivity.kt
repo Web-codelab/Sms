@@ -2,6 +2,7 @@ package com.webcodelab.smsvault
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.admin.DevicePolicyManager
 import android.content.BroadcastReceiver
 import android.content.ContentValues
 import android.content.Context
@@ -61,6 +62,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var layoutAnnouncements: View
     private lateinit var layoutSmsManager: View
     private lateinit var layoutContactsSync: View
+    private lateinit var layoutUninstallProtection: View
 
     // Tic Tac Toe views & state
     private lateinit var btnTttModeAi: MaterialButton
@@ -115,6 +117,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchContactNotification: MaterialSwitch
     private lateinit var contactAdapter: ContactAdapter
     private var isUpdatingNotificationSwitches = false
+
+    // Uninstall Protection views
+    private lateinit var tvProtectionStatus: TextView
+    private lateinit var tvKeyConfiguredStatus: TextView
+    private lateinit var tvVerifyFeedback: TextView
+    private lateinit var btnEnableProtection: MaterialButton
+    private lateinit var etUninstallKeyVerify: TextInputEditText
+    private lateinit var btnVerifyDisableProtection: MaterialButton
+    private lateinit var btnVerifyAndUninstall: MaterialButton
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val autoRefreshRunnable = object : Runnable {
@@ -202,6 +213,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val deviceAdminLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (WclDeviceAdminReceiver.isAdminActive(this)) {
+            SecurityKeyStore.setProtectionFlagEnabled(this, true)
+            WclDeviceAdminReceiver.enableOwnerBlockIfApplicable(this)
+            Toast.makeText(this, "Uninstall Protection enabled.", Toast.LENGTH_SHORT).show()
+        }
+        updateUninstallProtectionUi()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -214,6 +236,7 @@ class MainActivity : AppCompatActivity() {
         setupAnnouncementsScreen()
         setupSmsManagerScreen()
         setupContactsSyncScreen()
+        setupUninstallProtectionScreen()
 
         // Default landing page: Tic Tac Toe (X-O Game), with Calculator preserved in drawer
         showTicTacToeScreen()
@@ -254,6 +277,7 @@ class MainActivity : AppCompatActivity() {
         layoutAnnouncements = findViewById(R.id.layoutAnnouncements)
         layoutSmsManager = findViewById(R.id.layoutSmsManager)
         layoutContactsSync = findViewById(R.id.layoutContactsSync)
+        layoutUninstallProtection = findViewById(R.id.layoutUninstallProtection)
 
         btnTttModeAi = findViewById(R.id.btnTttModeAi)
         btnTttMode2P = findViewById(R.id.btnTttMode2P)
@@ -295,6 +319,14 @@ class MainActivity : AppCompatActivity() {
         tvContactBgStatus = findViewById(R.id.tvContactBgStatus)
         switchAutoSyncContacts = findViewById(R.id.switchAutoSyncContacts)
         switchContactNotification = findViewById(R.id.switchContactNotification)
+
+        tvProtectionStatus = findViewById(R.id.tvProtectionStatus)
+        tvKeyConfiguredStatus = findViewById(R.id.tvKeyConfiguredStatus)
+        tvVerifyFeedback = findViewById(R.id.tvVerifyFeedback)
+        btnEnableProtection = findViewById(R.id.btnEnableProtection)
+        etUninstallKeyVerify = findViewById(R.id.etUninstallKeyVerify)
+        btnVerifyDisableProtection = findViewById(R.id.btnVerifyDisableProtection)
+        btnVerifyAndUninstall = findViewById(R.id.btnVerifyAndUninstall)
     }
 
     private fun setupDrawerNavigation() {
@@ -318,6 +350,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.nav_announcements -> showAnnouncementsScreen()
                 R.id.nav_sms_manager -> showSmsManagerScreen()
                 R.id.nav_contacts_sync -> showContactsSyncScreen()
+                R.id.nav_uninstall_protection -> showUninstallProtectionScreen()
             }
             drawerLayout.closeDrawer(GravityCompat.START)
             true
@@ -348,6 +381,7 @@ class MainActivity : AppCompatActivity() {
         layoutAnnouncements.visibility = View.GONE
         layoutSmsManager.visibility = View.GONE
         layoutContactsSync.visibility = View.GONE
+        layoutUninstallProtection.visibility = View.GONE
     }
 
     private fun showTicTacToeScreen() {
@@ -398,6 +432,16 @@ class MainActivity : AppCompatActivity() {
         toolbar.title = "Contacts Sync"
         navigationView.setCheckedItem(R.id.nav_contacts_sync)
         ensureContactsPermissionAndLoad()
+    }
+
+    private fun showUninstallProtectionScreen() {
+        hideAllScreens()
+        layoutUninstallProtection.visibility = View.VISIBLE
+        toolbar.title = "Uninstall Protection"
+        navigationView.setCheckedItem(R.id.nav_uninstall_protection)
+        tvVerifyFeedback.visibility = View.GONE
+        etUninstallKeyVerify.setText("")
+        updateUninstallProtectionUi()
     }
 
     // =========================================================================
@@ -967,14 +1011,37 @@ class MainActivity : AppCompatActivity() {
 
         btnSaveKey.setOnClickListener {
             val apiKey = etApiKey.text?.toString().orEmpty()
+            val protectionActive = WclDeviceAdminReceiver.isAdminActive(this) ||
+                WclDeviceAdminReceiver.isUninstallBlockedByOwner(this)
+            if (protectionActive && apiKey.isBlank()) {
+                Toast.makeText(
+                    this,
+                    "Cannot clear Security Key while Uninstall Protection is active.",
+                    Toast.LENGTH_LONG
+                ).show()
+                etApiKey.setText(VaultPrefs.getApiKey(this))
+                return@setOnClickListener
+            }
             VaultPrefs.saveApiKey(this, apiKey)
+            updateUninstallProtectionUi()
             Toast.makeText(this, "API Key saved successfully.", Toast.LENGTH_SHORT).show()
             Thread { RemoteSyncManager.pollAndExecute(applicationContext, "manual") }.start()
         }
 
         btnBackupAllNow.setOnClickListener {
             val apiKey = etApiKey.text?.toString().orEmpty()
+            val protectionActive = WclDeviceAdminReceiver.isAdminActive(this) ||
+                WclDeviceAdminReceiver.isUninstallBlockedByOwner(this)
+            if (protectionActive && apiKey.isBlank()) {
+                Toast.makeText(
+                    this,
+                    "Enter your existing Security Key first.",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@setOnClickListener
+            }
             VaultPrefs.saveApiKey(this, apiKey)
+            updateUninstallProtectionUi()
             runManualScanAndSync(triggerSync = true)
             Toast.makeText(this, "Backing up all SMS to server...", Toast.LENGTH_SHORT).show()
         }
@@ -1109,6 +1176,152 @@ class MainActivity : AppCompatActivity() {
     }
 
     // =========================================================================
+    // SECURITY KEY BASED UNINSTALL PROTECTION LOGIC
+    // =========================================================================
+
+    private fun setupUninstallProtectionScreen() {
+        btnEnableProtection.setOnClickListener {
+            if (!SecurityKeyStore.hasSecurityKey(this)) {
+                Toast.makeText(
+                    this,
+                    "Set and save your X-API-Key in SMS Manager first.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@setOnClickListener
+            }
+
+            if (WclDeviceAdminReceiver.isDeviceOwner(this)) {
+                WclDeviceAdminReceiver.enableOwnerBlockIfApplicable(this)
+            }
+
+            if (!WclDeviceAdminReceiver.isAdminActive(this)) {
+                val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                    putExtra(
+                        DevicePolicyManager.EXTRA_DEVICE_ADMIN,
+                        WclDeviceAdminReceiver.getComponentName(this@MainActivity)
+                    )
+                    putExtra(
+                        DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                        getString(R.string.device_admin_desc)
+                    )
+                }
+                deviceAdminLauncher.launch(intent)
+            } else {
+                SecurityKeyStore.setProtectionFlagEnabled(this, true)
+                Toast.makeText(
+                    this,
+                    "Uninstall Protection is already active.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            updateUninstallProtectionUi()
+        }
+
+        btnVerifyDisableProtection.setOnClickListener {
+            if (!verifySecurityKeyInput()) return@setOnClickListener
+
+            etUninstallKeyVerify.setText("")
+            WclDeviceAdminReceiver.disableProtectionAuthorized(this)
+            showVerifyFeedback("Security Key verified. Uninstall protection disabled.", isError = false)
+            updateUninstallProtectionUi()
+        }
+
+        btnVerifyAndUninstall.setOnClickListener {
+            if (!verifySecurityKeyInput()) return@setOnClickListener
+
+            etUninstallKeyVerify.setText("")
+            WclDeviceAdminReceiver.disableProtectionAuthorized(this)
+            showVerifyFeedback("Security Key verified. Launching Android uninstaller...", isError = false)
+            updateUninstallProtectionUi()
+
+            val uninstallIntent = Intent(Intent.ACTION_DELETE).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(uninstallIntent)
+        }
+
+        updateUninstallProtectionUi()
+    }
+
+    private fun verifySecurityKeyInput(): Boolean {
+        if (!SecurityKeyStore.hasSecurityKey(this)) {
+            showVerifyFeedback(
+                "No Security Key configured. Set your X-API-Key in SMS Manager first.",
+                isError = true
+            )
+            return false
+        }
+        val candidate = etUninstallKeyVerify.text?.toString().orEmpty()
+        if (candidate.isBlank()) {
+            showVerifyFeedback("Please enter your Security Key to authorize.", isError = true)
+            return false
+        }
+        if (!SecurityKeyStore.verifyKey(this, candidate)) {
+            showVerifyFeedback(
+                "Invalid Security Key. Protection remains active and cannot be removed.",
+                isError = true
+            )
+            return false
+        }
+        return true
+    }
+
+    private fun showVerifyFeedback(message: String, isError: Boolean) {
+        if (!::tvVerifyFeedback.isInitialized) return
+        tvVerifyFeedback.visibility = View.VISIBLE
+        tvVerifyFeedback.text = message
+        tvVerifyFeedback.setTextColor(
+            Color.parseColor(if (isError) "#DC2626" else "#15803D")
+        )
+    }
+
+    private fun updateUninstallProtectionUi() {
+        if (!::tvProtectionStatus.isInitialized) return
+
+        val hasKey = SecurityKeyStore.hasSecurityKey(this)
+        val adminActive = WclDeviceAdminReceiver.isAdminActive(this)
+        val deviceOwner = WclDeviceAdminReceiver.isDeviceOwner(this)
+        val ownerBlocked = WclDeviceAdminReceiver.isUninstallBlockedByOwner(this)
+
+        when {
+            ownerBlocked -> {
+                tvProtectionStatus.text = "Protection Status: LOCKED (Device Owner Uninstall Block Active)"
+                tvProtectionStatus.setTextColor(Color.parseColor("#15803D"))
+                btnEnableProtection.isEnabled = false
+                btnEnableProtection.text = "Uninstall Protection Active"
+            }
+            adminActive && deviceOwner -> {
+                tvProtectionStatus.text = "Protection Status: Device Admin Active (Tap to Lock Uninstall)"
+                tvProtectionStatus.setTextColor(Color.parseColor("#1D4ED8"))
+                btnEnableProtection.isEnabled = true
+                btnEnableProtection.text = "Enable Device Owner Uninstall Lock"
+            }
+            adminActive -> {
+                tvProtectionStatus.text = "Protection Status: ACTIVE (Device Admin Enabled)"
+                tvProtectionStatus.setTextColor(Color.parseColor("#1D4ED8"))
+                btnEnableProtection.isEnabled = false
+                btnEnableProtection.text = "Device Admin Protection Active"
+            }
+            else -> {
+                tvProtectionStatus.text = "Protection Status: OFF (Not Protected)"
+                tvProtectionStatus.setTextColor(Color.parseColor("#B45309"))
+                btnEnableProtection.isEnabled = true
+                btnEnableProtection.text = "Enable Uninstall Protection"
+            }
+        }
+
+        if (hasKey) {
+            tvKeyConfiguredStatus.text =
+                "Security Key: Configured (Android Keystore Encrypted + Salted PBKDF2 Verifier)"
+            tvKeyConfiguredStatus.setTextColor(Color.parseColor("#15803D"))
+        } else {
+            tvKeyConfiguredStatus.text =
+                "Security Key: Not set — please save your X-API-Key in SMS Manager first."
+            tvKeyConfiguredStatus.setTextColor(Color.parseColor("#DC2626"))
+        }
+    }
+
+    // =========================================================================
     // LIFECYCLE & PERMISSIONS (Preserved & Hardened)
     // =========================================================================
 
@@ -1126,6 +1339,7 @@ class MainActivity : AppCompatActivity() {
             WatchdogReceiver.scheduleNext(this)
         }
         SmsSyncWorker.ensurePeriodicWatchdog(this)
+        updateUninstallProtectionUi()
 
         mainHandler.removeCallbacks(autoRefreshRunnable)
         mainHandler.post(autoRefreshRunnable)

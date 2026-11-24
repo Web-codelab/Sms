@@ -127,17 +127,11 @@ object VaultPrefs {
     }
 
     fun getApiKey(context: Context): String {
-        return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_API_KEY, "")
-            ?.trim()
-            ?: ""
+        return SecurityKeyStore.getApiKey(context)
     }
 
     fun saveApiKey(context: Context, apiKey: String) {
-        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_API_KEY, apiKey.trim())
-            .apply()
+        SecurityKeyStore.saveSecurityKey(context, apiKey)
     }
 
     fun getSyncIntervalMinutes(context: Context): Int {
