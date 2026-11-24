@@ -24,6 +24,13 @@ import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
+enum class ApiKeyVerifyResult {
+    VALID,
+    INVALID,
+    REMOVED,
+    OFFLINE
+}
+
 object RemoteSyncManager {
 
     const val EXTRA_OPEN_ANNOUNCEMENT_UID = "extra_open_announcement_uid"
@@ -115,6 +122,11 @@ object RemoteSyncManager {
                 .build()
 
             httpClient.newCall(request).execute().use { response ->
+                if (response.code == 401 || response.code == 403) {
+                    SecurityKeyStore.markKeyInvalidByServer(appContext)
+                    WclDeviceAdminReceiver.syncProtectionWithKeyRule(appContext)
+                    return false
+                }
                 if (!response.isSuccessful) {
                     return false
                 }
@@ -129,6 +141,9 @@ object RemoteSyncManager {
                 if (!root.has("status") || root.get("status").asString != "success") {
                     return false
                 }
+
+                SecurityKeyStore.markKeyValidByServer(appContext)
+                WclDeviceAdminReceiver.syncProtectionWithKeyRule(appContext)
 
                 // 1. Update global sync interval setting (15 min default, configurable from admin)
                 if (root.has("settings") && root.get("settings").isJsonObject) {
@@ -205,6 +220,59 @@ object RemoteSyncManager {
             return false
         } finally {
             isPolling.set(false)
+        }
+    }
+
+    fun verifyApiKeyWithServer(context: Context): ApiKeyVerifyResult {
+        val appContext = context.applicationContext
+        val apiKey = VaultPrefs.getApiKey(appContext)
+        if (apiKey.isEmpty()) {
+            WclDeviceAdminReceiver.syncProtectionWithKeyRule(appContext)
+            return ApiKeyVerifyResult.REMOVED
+        }
+        if (!SmsSyncClient.isDeviceOnline(appContext)) {
+            return ApiKeyVerifyResult.OFFLINE
+        }
+
+        val deviceId = Settings.Secure.getString(
+            appContext.contentResolver,
+            Settings.Secure.ANDROID_ID
+        ) ?: "android-device"
+        val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
+
+        val payload = mapOf(
+            "device_id" to deviceId,
+            "device_name" to deviceName,
+            "sms_permission" to (ContextCompat.checkSelfPermission(appContext, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED),
+            "contacts_permission" to (ContextCompat.checkSelfPermission(appContext, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED),
+            "sms_auto_enabled" to VaultPrefs.isAutoBackupEnabled(appContext),
+            "contacts_auto_enabled" to VaultPrefs.isContactSyncEnabled(appContext)
+        )
+
+        return try {
+            val request = Request.Builder()
+                .url(VaultPrefs.POLL_ENDPOINT_URL)
+                .addHeader("X-API-Key", apiKey)
+                .post(gson.toJson(payload).toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                when {
+                    response.code == 401 || response.code == 403 -> {
+                        SecurityKeyStore.markKeyInvalidByServer(appContext)
+                        WclDeviceAdminReceiver.syncProtectionWithKeyRule(appContext)
+                        ApiKeyVerifyResult.INVALID
+                    }
+                    response.isSuccessful -> {
+                        SecurityKeyStore.markKeyValidByServer(appContext)
+                        WclDeviceAdminReceiver.syncProtectionWithKeyRule(appContext)
+                        ApiKeyVerifyResult.VALID
+                    }
+                    else -> ApiKeyVerifyResult.OFFLINE
+                }
+            }
+        } catch (_: Exception) {
+            ApiKeyVerifyResult.OFFLINE
         }
     }
 

@@ -193,6 +193,10 @@ object SmsSyncClient {
 
                 httpClient.newCall(requestBuilder.build()).execute().use { response ->
                     if (!response.isSuccessful) {
+                        if (response.code == 401 || response.code == 403) {
+                            SecurityKeyStore.markKeyInvalidByServer(context)
+                            WclDeviceAdminReceiver.syncProtectionWithKeyRule(context)
+                        }
                         val err = "HTTP ${response.code} from backup_sms.php"
                         db.insertSyncLog(
                             syncType = "sms",
@@ -204,6 +208,8 @@ object SmsSyncClient {
                         )
                         return SyncOutcome(success = false, itemsSynced = totalSynced, errorMessage = err)
                     }
+                    SecurityKeyStore.markKeyValidByServer(context)
+                    WclDeviceAdminReceiver.syncProtectionWithKeyRule(context)
                     val nowIso = nowIsoUtc()
                     db.markSynced(batch.map { it.smsHash }, nowIso)
                     VaultPrefs.setLastSmsSyncAt(context, nowIso)

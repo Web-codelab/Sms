@@ -1428,7 +1428,7 @@
                             android:layout_marginTop="10dp"
                             android:background="#F8FAFC"
                             android:padding="10dp"
-                            android:text="Uses the same X-API-Key (stored encrypted via Android Keystore + salted PBKDF2 hash). On standard consumer Android phones, Device Admin blocks normal uninstall until deactivated. Full OS-level uninstall lock requires Enterprise Device Owner mode."
+                            android:text="Uninstall stays BLOCKED whenever a Valid X-API-Key is active in SMS Manager. Uninstall is unlocked ONLY after removing the API Key or saving an invalid API Key (rejected by server). Standard Android uses Device Admin; full OS uninstall lock uses Device Owner mode."
                             android:textColor="#475569"
                             android:textSize="11sp" />
 
@@ -1442,7 +1442,7 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Verify Key & Disable / Uninstall Card -->
+                <!-- Check Key State & Uninstall Card -->
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -1462,7 +1462,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Authorize Disable / Uninstall"
+                            android:text="Uninstall Authorization"
                             android:textColor="#0F172A"
                             android:textSize="16sp"
                             android:textStyle="bold" />
@@ -1471,35 +1471,15 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:text="Enter your existing Security Key (X-API-Key) to verify before removing protection or uninstalling WCL."
+                            android:text="To unlock uninstall, go to SMS Manager and either clear (remove) the API Key or save an invalid API Key."
                             android:textColor="#64748B"
                             android:textSize="12sp" />
-
-                        <com.google.android.material.textfield.TextInputLayout
-                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:hint="Verify Security Key"
-                            app:boxCornerRadiusBottomEnd="12dp"
-                            app:boxCornerRadiusBottomStart="12dp"
-                            app:boxCornerRadiusTopEnd="12dp"
-                            app:boxCornerRadiusTopStart="12dp"
-                            app:endIconMode="password_toggle">
-
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/etUninstallKeyVerify"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:inputType="textPassword"
-                                android:textSize="14sp" />
-                        </com.google.android.material.textfield.TextInputLayout>
 
                         <TextView
                             android:id="@+id/tvVerifyFeedback"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="10dp"
                             android:text=""
                             android:textColor="#DC2626"
                             android:textSize="12sp"
@@ -1511,7 +1491,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="46dp"
                             android:layout_marginTop="12dp"
-                            android:text="Verify Key &amp; Disable Protection"
+                            android:text="Check Current API Key Status"
                             app:cornerRadius="12dp" />
 
                         <com.google.android.material.button.MaterialButton
@@ -1520,7 +1500,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="46dp"
                             android:layout_marginTop="8dp"
-                            android:text="Verify Key &amp; Uninstall App"
+                            android:text="Uninstall WCL App"
                             android:textColor="#DC2626"
                             app:cornerRadius="12dp"
                             app:strokeColor="#FCA5A5" />

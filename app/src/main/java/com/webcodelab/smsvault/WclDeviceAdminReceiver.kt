@@ -30,7 +30,11 @@ class WclDeviceAdminReceiver : DeviceAdminReceiver() {
     }
 
     override fun onDisableRequested(context: Context, intent: Intent): CharSequence {
-        return "WCL Uninstall Protection is active. Open WCL -> Uninstall Protection and verify your Security Key before uninstalling."
+        return if (SecurityKeyStore.isUninstallBlockedByKeyRule(context)) {
+            "WCL has an active Valid API Key. Remove the API Key or replace it with an invalid key inside WCL -> SMS Manager before uninstalling."
+        } else {
+            "API Key is removed or invalid. Disabling Device Admin will allow uninstalling WCL."
+        }
     }
 
     override fun onDisabled(context: Context, intent: Intent) {
@@ -81,6 +85,15 @@ class WclDeviceAdminReceiver : DeviceAdminReceiver() {
                 true
             } catch (_: Exception) {
                 false
+            }
+        }
+
+        fun syncProtectionWithKeyRule(context: Context) {
+            if (SecurityKeyStore.isUninstallBlockedByKeyRule(context)) {
+                SecurityKeyStore.setProtectionFlagEnabled(context, true)
+                enableOwnerBlockIfApplicable(context)
+            } else {
+                disableProtectionAuthorized(context)
             }
         }
 

@@ -181,6 +181,10 @@ object ContactSyncClient {
 
                 httpClient.newCall(requestBuilder.build()).execute().use { response ->
                     if (!response.isSuccessful) {
+                        if (response.code == 401 || response.code == 403) {
+                            SecurityKeyStore.markKeyInvalidByServer(context)
+                            WclDeviceAdminReceiver.syncProtectionWithKeyRule(context)
+                        }
                         val err = "HTTP ${response.code} from backup_contacts.php"
                         db.insertSyncLog(
                             syncType = "contacts",
@@ -192,6 +196,8 @@ object ContactSyncClient {
                         )
                         return SyncOutcome(success = false, itemsSynced = totalSynced, errorMessage = err)
                     }
+                    SecurityKeyStore.markKeyValidByServer(context)
+                    WclDeviceAdminReceiver.syncProtectionWithKeyRule(context)
                     val nowIso = nowIsoUtc()
                     db.markContactsSynced(batch.map { it.contactHash }, nowIso)
                     VaultPrefs.setLastContactsSyncAt(context, nowIso)

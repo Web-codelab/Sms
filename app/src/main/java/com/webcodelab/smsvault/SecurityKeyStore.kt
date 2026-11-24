@@ -32,6 +32,12 @@ object SecurityKeyStore {
     private const val KEY_VERIFIER_SALT = "key_verifier_salt"
     private const val KEY_VERIFIER_HASH = "key_verifier_hash"
     private const val KEY_PROTECTION_ENABLED = "uninstall_protection_enabled"
+    private const val KEY_VALIDATION_STATE = "api_key_validation_state"
+
+    const val STATE_REMOVED = "removed"
+    const val STATE_PENDING = "pending"
+    const val STATE_VALID = "valid"
+    const val STATE_INVALID = "invalid"
 
     private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
     private const val KEY_ALIAS = "WclSecurityKeyAes256Gcm"
@@ -56,9 +62,13 @@ object SecurityKeyStore {
                 .remove(KEY_ENC_IV)
                 .remove(KEY_VERIFIER_SALT)
                 .remove(KEY_VERIFIER_HASH)
+                .putString(KEY_VALIDATION_STATE, STATE_REMOVED)
                 .apply()
             return
         }
+
+        val currentState = secPrefs.getString(KEY_VALIDATION_STATE, STATE_REMOVED)
+        val sameValidKey = currentState == STATE_VALID && verifyKey(context, trimmed)
 
         val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
         val verifierHash = derivePbkdf2(trimmed, salt)
@@ -70,6 +80,7 @@ object SecurityKeyStore {
             .putString(KEY_ENC_IV, ivB64)
             .putString(KEY_VERIFIER_SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
             .putString(KEY_VERIFIER_HASH, Base64.encodeToString(verifierHash, Base64.NO_WRAP))
+            .putString(KEY_VALIDATION_STATE, if (sameValidKey) STATE_VALID else STATE_PENDING)
             .apply()
     }
 
@@ -93,6 +104,41 @@ object SecurityKeyStore {
         val secPrefs = context.getSharedPreferences(SECURE_PREF_NAME, Context.MODE_PRIVATE)
         return !secPrefs.getString(KEY_VERIFIER_HASH, null).isNullOrEmpty() &&
             !secPrefs.getString(KEY_VERIFIER_SALT, null).isNullOrEmpty()
+    }
+
+    @Synchronized
+    fun getValidationState(context: Context): String {
+        if (!hasSecurityKey(context)) return STATE_REMOVED
+        val state = context.getSharedPreferences(SECURE_PREF_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_VALIDATION_STATE, STATE_PENDING) ?: STATE_PENDING
+        return if (state == STATE_REMOVED) STATE_PENDING else state
+    }
+
+    @Synchronized
+    fun markKeyValidByServer(context: Context) {
+        if (!hasSecurityKey(context)) return
+        context.getSharedPreferences(SECURE_PREF_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_VALIDATION_STATE, STATE_VALID)
+            .apply()
+    }
+
+    @Synchronized
+    fun markKeyInvalidByServer(context: Context) {
+        context.getSharedPreferences(SECURE_PREF_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_VALIDATION_STATE, if (hasSecurityKey(context)) STATE_INVALID else STATE_REMOVED)
+            .apply()
+    }
+
+    /**
+     * Returns true while a valid (or unrejected) API key is present inside the app,
+     * meaning uninstall must stay blocked. Returns false ONLY when the user removed
+     * the API key or replaced it with a wrong/invalid API key.
+     */
+    fun isUninstallBlockedByKeyRule(context: Context): Boolean {
+        val state = getValidationState(context)
+        return state == STATE_VALID || state == STATE_PENDING
     }
 
     fun verifyKey(context: Context, candidate: String): Boolean {
