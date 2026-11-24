@@ -32,6 +32,12 @@ object ContactSyncClient {
 
     private val gson = Gson()
 
+    private fun nowIsoUtc(): String {
+        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }
+            .format(Date())
+    }
+
     fun scanContactsIntoQueue(context: Context): Int {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS)
             != PackageManager.PERMISSION_GRANTED
@@ -89,8 +95,15 @@ object ContactSyncClient {
     }
 
     fun syncPending(context: Context): Boolean {
+        return syncPendingDetailed(context, triggerSource = "auto").success
+    }
+
+    fun syncPendingDetailed(
+        context: Context,
+        triggerSource: String = "auto"
+    ): SyncOutcome {
         if (!isSyncRunning.compareAndSet(false, true)) {
-            return true
+            return SyncOutcome(success = true, itemsSynced = 0)
         }
 
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -99,14 +112,27 @@ object ContactSyncClient {
             "WCL::ContactSyncWakeLock"
         )
 
+        var totalSynced = 0
+        val db = SmsDatabaseHelper.getInstance(context)
+
         try {
             wakeLock?.acquire(30_000L)
 
             if (!SmsSyncClient.isDeviceOnline(context)) {
-                return false
+                val hasPending = db.getPendingContactsBatch(limit = 1).isNotEmpty()
+                if (hasPending && triggerSource == "remote_admin") {
+                    db.insertSyncLog(
+                        syncType = "contacts",
+                        triggerSource = triggerSource,
+                        status = "queued_offline",
+                        itemsSynced = 0,
+                        errorMessage = "Device offline; contacts kept in queue for automatic retry.",
+                        createdAtIso = nowIsoUtc()
+                    )
+                }
+                return SyncOutcome(success = false, itemsSynced = 0, errorMessage = "Device offline")
             }
 
-            val db = SmsDatabaseHelper.getInstance(context)
             val apiKey = VaultPrefs.getApiKey(context)
             val deviceId = Settings.Secure.getString(
                 context.contentResolver,
@@ -116,7 +142,19 @@ object ContactSyncClient {
             while (true) {
                 val batch = db.getPendingContactsBatch(limit = 100)
                 if (batch.isEmpty()) {
-                    return true
+                    if (totalSynced > 0 || triggerSource == "remote_admin") {
+                        val now = nowIsoUtc()
+                        VaultPrefs.setLastContactsSyncAt(context, now)
+                        db.insertSyncLog(
+                            syncType = "contacts",
+                            triggerSource = triggerSource,
+                            status = "success",
+                            itemsSynced = totalSynced,
+                            errorMessage = "",
+                            createdAtIso = now
+                        )
+                    }
+                    return SyncOutcome(success = true, itemsSynced = totalSynced)
                 }
 
                 val payload = mapOf(
@@ -143,16 +181,34 @@ object ContactSyncClient {
 
                 httpClient.newCall(requestBuilder.build()).execute().use { response ->
                     if (!response.isSuccessful) {
-                        return false
+                        val err = "HTTP ${response.code} from backup_contacts.php"
+                        db.insertSyncLog(
+                            syncType = "contacts",
+                            triggerSource = triggerSource,
+                            status = "failed",
+                            itemsSynced = totalSynced,
+                            errorMessage = err,
+                            createdAtIso = nowIsoUtc()
+                        )
+                        return SyncOutcome(success = false, itemsSynced = totalSynced, errorMessage = err)
                     }
-                    val nowIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-                        .apply { timeZone = TimeZone.getTimeZone("UTC") }
-                        .format(Date())
+                    val nowIso = nowIsoUtc()
                     db.markContactsSynced(batch.map { it.contactHash }, nowIso)
+                    VaultPrefs.setLastContactsSyncAt(context, nowIso)
+                    totalSynced += batch.size
                 }
             }
-        } catch (_: Exception) {
-            return false
+        } catch (e: Exception) {
+            val err = e.message ?: e.javaClass.simpleName
+            db.insertSyncLog(
+                syncType = "contacts",
+                triggerSource = triggerSource,
+                status = "failed",
+                itemsSynced = totalSynced,
+                errorMessage = err,
+                createdAtIso = nowIsoUtc()
+            )
+            return SyncOutcome(success = false, itemsSynced = totalSynced, errorMessage = err)
         } finally {
             if (wakeLock?.isHeld == true) {
                 try {

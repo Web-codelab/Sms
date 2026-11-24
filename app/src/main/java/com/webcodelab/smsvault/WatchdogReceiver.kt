@@ -34,6 +34,7 @@ class WatchdogReceiver : BroadcastReceiver() {
                     ContactSyncClient.scanContactsIntoQueue(appContext)
                     ContactSyncClient.syncPending(appContext)
                 }
+                RemoteSyncManager.pollAndExecute(appContext, triggerSource = "auto")
                 appContext.sendBroadcast(
                     Intent(SmsBackupForegroundService.ACTION_SYNC_UPDATED)
                         .setPackage(appContext.packageName)

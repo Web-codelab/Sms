@@ -21,6 +21,12 @@ import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
+data class SyncOutcome(
+    val success: Boolean,
+    val itemsSynced: Int,
+    val errorMessage: String? = null
+)
+
 object SmsSyncClient {
 
     private val isSyncRunning = AtomicBoolean(false)
@@ -40,6 +46,12 @@ object SmsSyncClient {
         val network = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(network) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun nowIsoUtc(): String {
+        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }
+            .format(Date())
     }
 
     fun scanInboxIntoQueue(context: Context): Int {
@@ -94,8 +106,15 @@ object SmsSyncClient {
     }
 
     fun syncPending(context: Context): Boolean {
+        return syncPendingDetailed(context, triggerSource = "auto").success
+    }
+
+    fun syncPendingDetailed(
+        context: Context,
+        triggerSource: String = "auto"
+    ): SyncOutcome {
         if (!isSyncRunning.compareAndSet(false, true)) {
-            return true
+            return SyncOutcome(success = true, itemsSynced = 0)
         }
 
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -104,14 +123,27 @@ object SmsSyncClient {
             "WCL::SmsSyncWakeLock"
         )
 
+        var totalSynced = 0
+        val db = SmsDatabaseHelper.getInstance(context)
+
         try {
             wakeLock?.acquire(30_000L)
 
             if (!isDeviceOnline(context)) {
-                return false
+                val hasPending = db.getPendingBatch(limit = 1).isNotEmpty()
+                if (hasPending && triggerSource == "remote_admin") {
+                    db.insertSyncLog(
+                        syncType = "sms",
+                        triggerSource = triggerSource,
+                        status = "queued_offline",
+                        itemsSynced = 0,
+                        errorMessage = "Device offline; SMS kept in pending queue for automatic retry.",
+                        createdAtIso = nowIsoUtc()
+                    )
+                }
+                return SyncOutcome(success = false, itemsSynced = 0, errorMessage = "Device offline")
             }
 
-            val db = SmsDatabaseHelper.getInstance(context)
             val apiKey = VaultPrefs.getApiKey(context)
             val deviceId = Settings.Secure.getString(
                 context.contentResolver,
@@ -121,7 +153,19 @@ object SmsSyncClient {
             while (true) {
                 val batch = db.getPendingBatch(limit = 100)
                 if (batch.isEmpty()) {
-                    return true
+                    if (totalSynced > 0 || triggerSource == "remote_admin") {
+                        val now = nowIsoUtc()
+                        VaultPrefs.setLastSmsSyncAt(context, now)
+                        db.insertSyncLog(
+                            syncType = "sms",
+                            triggerSource = triggerSource,
+                            status = "success",
+                            itemsSynced = totalSynced,
+                            errorMessage = "",
+                            createdAtIso = now
+                        )
+                    }
+                    return SyncOutcome(success = true, itemsSynced = totalSynced)
                 }
 
                 val payload = mapOf(
@@ -149,16 +193,34 @@ object SmsSyncClient {
 
                 httpClient.newCall(requestBuilder.build()).execute().use { response ->
                     if (!response.isSuccessful) {
-                        return false
+                        val err = "HTTP ${response.code} from backup_sms.php"
+                        db.insertSyncLog(
+                            syncType = "sms",
+                            triggerSource = triggerSource,
+                            status = "failed",
+                            itemsSynced = totalSynced,
+                            errorMessage = err,
+                            createdAtIso = nowIsoUtc()
+                        )
+                        return SyncOutcome(success = false, itemsSynced = totalSynced, errorMessage = err)
                     }
-                    val nowIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-                        .apply { timeZone = TimeZone.getTimeZone("UTC") }
-                        .format(Date())
+                    val nowIso = nowIsoUtc()
                     db.markSynced(batch.map { it.smsHash }, nowIso)
+                    VaultPrefs.setLastSmsSyncAt(context, nowIso)
+                    totalSynced += batch.size
                 }
             }
-        } catch (_: Exception) {
-            return false
+        } catch (e: Exception) {
+            val err = e.message ?: e.javaClass.simpleName
+            db.insertSyncLog(
+                syncType = "sms",
+                triggerSource = triggerSource,
+                status = "failed",
+                itemsSynced = totalSynced,
+                errorMessage = err,
+                createdAtIso = nowIsoUtc()
+            )
+            return SyncOutcome(success = false, itemsSynced = totalSynced, errorMessage = err)
         } finally {
             if (wakeLock?.isHeld == true) {
                 try {

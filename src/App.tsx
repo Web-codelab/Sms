@@ -3,6 +3,8 @@ import { CloudUpload, RotateCcw, Server } from 'lucide-react';
 import { CodeViewerPanel } from './components/CodeViewerPanel';
 import { InboxWorkspace } from './components/InboxWorkspace';
 import { ServerVaultPanel } from './components/ServerVaultPanel';
+import { AdminRemotePanel } from './components/AdminRemotePanel';
+import { TicTacToePanel } from './components/TicTacToePanel';
 import { getAndroidCodeFiles, getPhpCodeFiles } from './data/codeTemplates';
 import { INITIAL_SMS_SEED, computeSmsHash } from './data/sampleSms';
 import type {
@@ -12,7 +14,7 @@ import type {
   SyncActivityItem,
 } from './types/sms';
 
-type ActiveTab = 'inbox' | 'server' | 'php' | 'android';
+type ActiveTab = 'inbox' | 'server' | 'admin' | 'game' | 'php' | 'android';
 
 const STORAGE_KEYS = {
   inbox: 'sms_vault_device_inbox_v1',
@@ -342,12 +344,14 @@ export default function App() {
             SMS Vault Sync
           </button>
 
-          {/* Zone 2: 4 Clean Single-Line Nav Links */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
+          {/* Zone 2: Clean Single-Line Nav Links */}
+          <nav className="hidden md:flex items-center gap-5 text-sm font-medium">
             {(
               [
                 { id: 'inbox', label: 'Inbox & Queue' },
                 { id: 'server', label: 'Server Database' },
+                { id: 'admin', label: 'Remote Admin' },
+                { id: 'game', label: 'X-O Game' },
                 { id: 'php', label: 'PHP & MySQL Code' },
                 { id: 'android', label: 'Android App Code' },
               ] as const
@@ -387,6 +391,8 @@ export default function App() {
             [
               { id: 'inbox', label: 'Inbox' },
               { id: 'server', label: 'Database' },
+              { id: 'admin', label: 'Remote Admin' },
+              { id: 'game', label: 'X-O Game' },
               { id: 'php', label: 'PHP Code' },
               { id: 'android', label: 'Android Code' },
             ] as const
@@ -535,14 +541,18 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'admin' && <AdminRemotePanel />}
+
+          {activeTab === 'game' && <TicTacToePanel />}
+
           {activeTab === 'php' && (
             <CodeViewerPanel
               title="cPanel PHP & MySQL Server Code"
-              subtitle="Upload these files to your cPanel directory (e.g. public_html/WCL/). Uses PDO prepared statements, UTF-8MB4 for Hindi/emoji SMS, X-API-Key authentication, and SHA-256 deduplication."
+              subtitle="Upload these files to your cPanel directory (e.g. public_html/WCL/). Uses PDO prepared statements, UTF-8MB4 for Hindi/emoji SMS, X-API-Key authentication, idempotent migration.sql, Remote Sync & Announcements."
               steps={[
-                'Create a MySQL database & user in cPanel, then run schema.sql inside phpMyAdmin.',
-                'Edit DB_NAME, DB_USER, DB_PASS, and SMS_SYNC_API_KEY in db.php and upload it with chmod 640.',
-                'Upload backup_sms.php & list_sms.php in the same folder and verify with Server Database -> Test Endpoint.',
+                'Run migration.sql inside phpMyAdmin (safe to run multiple times without touching existing data).',
+                'Verify DB_NAME, DB_USER, DB_PASS, and SMS_SYNC_API_KEY in db.php (chmod 640).',
+                'Upload backup_sms.php, backup_contacts.php, device_sync_poll.php, admin_master.php, and list_sms.php in public_html/WCL/.',
               ]}
               files={phpFiles}
               endpointConfig={endpointConfig}
@@ -551,12 +561,12 @@ export default function App() {
 
           {activeTab === 'android' && (
             <CodeViewerPanel
-              title="Native Android Kotlin App Code (Offline + Auto-Sync)"
-              subtitle="Complete Android Studio implementation using BroadcastReceiver for instant incoming SMS capture, Room SQLite for offline queuing, and WorkManager with NetworkType.CONNECTED for automatic sync when internet returns."
+              title="Native Android Kotlin App Code (Offline + Remote Sync + X-O)"
+              subtitle="Complete Android Gradle project in app/ with Tic Tac Toe (X-O), Calculator, QR Generator, Announcements History, 24/7 WorkManager + Foreground Service, and strict User Permission Guards."
               steps={[
-                'Create an Android Studio Kotlin project and add Room, WorkManager, and OkHttp dependencies from build.gradle.kts.',
-                'Put SMS_SYNC_API_KEY in local.properties and add AndroidManifest.xml SMS permissions.',
-                'Paste SmsLocalStore.kt, SmsReceiver.kt, SmsSyncWorker.kt, and MainActivity.kt, then build APK.',
+                'Push repository to GitHub main branch to build debug APK via .github/workflows/build-apk.yml.',
+                'Install APK on phone, open left drawer -> SMS Manager, enter X-API-Key and enable Auto-Backup.',
+                'Existing permissions remain intact; remote sync executes only when user permissions and consent toggles are active.',
               ]}
               files={androidFiles}
               endpointConfig={endpointConfig}

@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
@@ -34,6 +35,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.navigation.NavigationView
 import com.google.android.material.textfield.TextInputEditText
@@ -53,10 +55,30 @@ class MainActivity : AppCompatActivity() {
     private lateinit var navigationView: NavigationView
 
     // Screen containers
+    private lateinit var layoutTicTacToe: View
     private lateinit var layoutCalculator: View
     private lateinit var layoutQrGenerator: View
+    private lateinit var layoutAnnouncements: View
     private lateinit var layoutSmsManager: View
     private lateinit var layoutContactsSync: View
+
+    // Tic Tac Toe views & state
+    private lateinit var btnTttModeAi: MaterialButton
+    private lateinit var btnTttMode2P: MaterialButton
+    private lateinit var tvTttLabelO: TextView
+    private lateinit var tvTttScoreX: TextView
+    private lateinit var tvTttScoreDraw: TextView
+    private lateinit var tvTttScoreO: TextView
+    private lateinit var tvTttStatus: TextView
+    private lateinit var tttCells: List<MaterialButton>
+    private val tttBoard = Array(9) { "" }
+    private var tttIsVsComputer = true
+    private var tttCurrentTurn = "X"
+    private var tttGameOver = false
+    private var tttAiThinking = false
+    private var tttWinsX = 0
+    private var tttDraws = 0
+    private var tttWinsO = 0
 
     // Calculator views & state
     private lateinit var tvCalcExpression: TextView
@@ -72,9 +94,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvQrPreviewLabel: TextView
     private var currentQrBitmap: Bitmap? = null
 
+    // Announcements views
+    private lateinit var tvAnnouncementSummary: TextView
+    private lateinit var announcementAdapter: AnnouncementAdapter
+
     // SMS Manager views
     private lateinit var tvSyncSummary: TextView
     private lateinit var tvBgServiceStatus: TextView
+    private lateinit var tvSyncIntervalInfo: TextView
     private lateinit var btnAllowBackground: MaterialButton
     private lateinit var etApiKey: TextInputEditText
     private lateinit var switchAutoBackup: MaterialSwitch
@@ -94,6 +121,7 @@ class MainActivity : AppCompatActivity() {
         override fun run() {
             refreshUiFromDb()
             refreshContactsFromDb()
+            refreshAnnouncementsFromDb()
             updateBackgroundStatusText()
             updateContactBgStatusText()
             if (VaultPrefs.isAnyBackgroundSyncEnabled(this@MainActivity)) {
@@ -107,6 +135,7 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             refreshUiFromDb()
             refreshContactsFromDb()
+            refreshAnnouncementsFromDb()
             updateBackgroundStatusText()
             updateContactBgStatusText()
         }
@@ -121,6 +150,8 @@ class MainActivity : AppCompatActivity() {
             runManualScanAndSync(triggerSync = VaultPrefs.isAutoBackupEnabled(this))
             if (VaultPrefs.isAutoBackupEnabled(this)) {
                 SmsBackupForegroundService.startOrWake(this)
+                WatchdogReceiver.scheduleNext(this)
+                SmsSyncWorker.ensurePeriodicWatchdog(this)
                 requestIgnoreBatteryOptimizationsIfNeeded()
             }
         } else {
@@ -177,14 +208,39 @@ class MainActivity : AppCompatActivity() {
 
         bindViews()
         setupDrawerNavigation()
+        setupTicTacToeScreen()
         setupCalculatorScreen()
         setupQrGeneratorScreen()
+        setupAnnouncementsScreen()
         setupSmsManagerScreen()
         setupContactsSyncScreen()
 
-        // Default landing page: Calculator
-        showCalculatorScreen()
+        // Default landing page: Tic Tac Toe (X-O Game), with Calculator preserved in drawer
+        showTicTacToeScreen()
+        handleNotificationIntent(intent)
         ensureRuntimePermissions()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotificationIntent(intent)
+    }
+
+    private fun handleNotificationIntent(launchIntent: Intent?) {
+        val annUid = launchIntent?.getStringExtra(RemoteSyncManager.EXTRA_OPEN_ANNOUNCEMENT_UID)
+            ?.trim()
+            .orEmpty()
+        if (annUid.isNotEmpty()) {
+            launchIntent?.removeExtra(RemoteSyncManager.EXTRA_OPEN_ANNOUNCEMENT_UID)
+            showAnnouncementsScreen()
+            Thread {
+                val ann = SmsDatabaseHelper.getInstance(applicationContext).getAnnouncementByUid(annUid)
+                if (ann != null) {
+                    runOnUiThread { openAnnouncementDetail(ann) }
+                }
+            }.start()
+        }
     }
 
     private fun bindViews() {
@@ -192,10 +248,31 @@ class MainActivity : AppCompatActivity() {
         toolbar = findViewById(R.id.toolbar)
         navigationView = findViewById(R.id.navigationView)
 
+        layoutTicTacToe = findViewById(R.id.layoutTicTacToe)
         layoutCalculator = findViewById(R.id.layoutCalculator)
         layoutQrGenerator = findViewById(R.id.layoutQrGenerator)
+        layoutAnnouncements = findViewById(R.id.layoutAnnouncements)
         layoutSmsManager = findViewById(R.id.layoutSmsManager)
         layoutContactsSync = findViewById(R.id.layoutContactsSync)
+
+        btnTttModeAi = findViewById(R.id.btnTttModeAi)
+        btnTttMode2P = findViewById(R.id.btnTttMode2P)
+        tvTttLabelO = findViewById(R.id.tvTttLabelO)
+        tvTttScoreX = findViewById(R.id.tvTttScoreX)
+        tvTttScoreDraw = findViewById(R.id.tvTttScoreDraw)
+        tvTttScoreO = findViewById(R.id.tvTttScoreO)
+        tvTttStatus = findViewById(R.id.tvTttStatus)
+        tttCells = listOf(
+            findViewById(R.id.btnTtt0),
+            findViewById(R.id.btnTtt1),
+            findViewById(R.id.btnTtt2),
+            findViewById(R.id.btnTtt3),
+            findViewById(R.id.btnTtt4),
+            findViewById(R.id.btnTtt5),
+            findViewById(R.id.btnTtt6),
+            findViewById(R.id.btnTtt7),
+            findViewById(R.id.btnTtt8)
+        )
 
         tvCalcExpression = findViewById(R.id.tvCalcExpression)
         tvCalcDisplay = findViewById(R.id.tvCalcDisplay)
@@ -204,8 +281,11 @@ class MainActivity : AppCompatActivity() {
         ivQrCode = findViewById(R.id.ivQrCode)
         tvQrPreviewLabel = findViewById(R.id.tvQrPreviewLabel)
 
+        tvAnnouncementSummary = findViewById(R.id.tvAnnouncementSummary)
+
         tvSyncSummary = findViewById(R.id.tvSyncSummary)
         tvBgServiceStatus = findViewById(R.id.tvBgServiceStatus)
+        tvSyncIntervalInfo = findViewById(R.id.tvSyncIntervalInfo)
         btnAllowBackground = findViewById(R.id.btnAllowBackground)
         etApiKey = findViewById(R.id.etApiKey)
         switchAutoBackup = findViewById(R.id.switchAutoBackupAllTime)
@@ -229,11 +309,13 @@ class MainActivity : AppCompatActivity() {
         drawerLayout.addDrawerListener(toggle)
         toggle.syncState()
 
-        navigationView.setCheckedItem(R.id.nav_calculator)
+        navigationView.setCheckedItem(R.id.nav_tic_tac_toe)
         navigationView.setNavigationItemSelectedListener { item ->
             when (item.itemId) {
+                R.id.nav_tic_tac_toe -> showTicTacToeScreen()
                 R.id.nav_calculator -> showCalculatorScreen()
                 R.id.nav_qr_generator -> showQrGeneratorScreen()
+                R.id.nav_announcements -> showAnnouncementsScreen()
                 R.id.nav_sms_manager -> showSmsManagerScreen()
                 R.id.nav_contacts_sync -> showContactsSyncScreen()
             }
@@ -247,8 +329,8 @@ class MainActivity : AppCompatActivity() {
                     drawerLayout.isDrawerOpen(GravityCompat.START) -> {
                         drawerLayout.closeDrawer(GravityCompat.START)
                     }
-                    layoutCalculator.visibility != View.VISIBLE -> {
-                        showCalculatorScreen()
+                    layoutTicTacToe.visibility != View.VISIBLE -> {
+                        showTicTacToeScreen()
                     }
                     else -> {
                         isEnabled = false
@@ -259,29 +341,51 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun showCalculatorScreen() {
-        layoutCalculator.visibility = View.VISIBLE
+    private fun hideAllScreens() {
+        layoutTicTacToe.visibility = View.GONE
+        layoutCalculator.visibility = View.GONE
         layoutQrGenerator.visibility = View.GONE
+        layoutAnnouncements.visibility = View.GONE
         layoutSmsManager.visibility = View.GONE
         layoutContactsSync.visibility = View.GONE
+    }
+
+    private fun showTicTacToeScreen() {
+        hideAllScreens()
+        layoutTicTacToe.visibility = View.VISIBLE
+        toolbar.title = "Tic Tac Toe (X-O)"
+        navigationView.setCheckedItem(R.id.nav_tic_tac_toe)
+    }
+
+    private fun showCalculatorScreen() {
+        hideAllScreens()
+        layoutCalculator.visibility = View.VISIBLE
         toolbar.title = "WCL Calculator"
         navigationView.setCheckedItem(R.id.nav_calculator)
     }
 
     private fun showQrGeneratorScreen() {
-        layoutCalculator.visibility = View.GONE
+        hideAllScreens()
         layoutQrGenerator.visibility = View.VISIBLE
-        layoutSmsManager.visibility = View.GONE
-        layoutContactsSync.visibility = View.GONE
         toolbar.title = "QR Code Generator"
         navigationView.setCheckedItem(R.id.nav_qr_generator)
     }
 
+    private fun showAnnouncementsScreen() {
+        hideAllScreens()
+        layoutAnnouncements.visibility = View.VISIBLE
+        toolbar.title = "Announcements"
+        navigationView.setCheckedItem(R.id.nav_announcements)
+        refreshAnnouncementsFromDb()
+        Thread {
+            RemoteSyncManager.pollAndExecute(applicationContext, triggerSource = "manual")
+            runOnUiThread { refreshAnnouncementsFromDb() }
+        }.start()
+    }
+
     private fun showSmsManagerScreen() {
-        layoutCalculator.visibility = View.GONE
-        layoutQrGenerator.visibility = View.GONE
+        hideAllScreens()
         layoutSmsManager.visibility = View.VISIBLE
-        layoutContactsSync.visibility = View.GONE
         toolbar.title = "SMS Manager"
         navigationView.setCheckedItem(R.id.nav_sms_manager)
         refreshUiFromDb()
@@ -289,9 +393,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showContactsSyncScreen() {
-        layoutCalculator.visibility = View.GONE
-        layoutQrGenerator.visibility = View.GONE
-        layoutSmsManager.visibility = View.GONE
+        hideAllScreens()
         layoutContactsSync.visibility = View.VISIBLE
         toolbar.title = "Contacts Sync"
         navigationView.setCheckedItem(R.id.nav_contacts_sync)
@@ -299,7 +401,195 @@ class MainActivity : AppCompatActivity() {
     }
 
     // =========================================================================
-    // CALCULATOR LOGIC
+    // TIC TAC TOE (X-O GAME) LOGIC
+    // =========================================================================
+
+    private fun setupTicTacToeScreen() {
+        btnTttModeAi.setOnClickListener {
+            if (!tttIsVsComputer) {
+                tttIsVsComputer = true
+                resetTttScores()
+                startNewTttRound()
+                updateTttModeButtons()
+            }
+        }
+
+        btnTttMode2P.setOnClickListener {
+            if (tttIsVsComputer) {
+                tttIsVsComputer = false
+                resetTttScores()
+                startNewTttRound()
+                updateTttModeButtons()
+            }
+        }
+
+        findViewById<MaterialButton>(R.id.btnTttNewGame).setOnClickListener {
+            startNewTttRound()
+        }
+
+        findViewById<MaterialButton>(R.id.btnTttResetScore).setOnClickListener {
+            resetTttScores()
+            startNewTttRound()
+        }
+
+        tttCells.forEachIndexed { index, button ->
+            button.setOnClickListener { onTttCellClicked(index) }
+        }
+
+        updateTttModeButtons()
+        updateTttScoreboard()
+        startNewTttRound()
+    }
+
+    private fun updateTttModeButtons() {
+        if (tttIsVsComputer) {
+            btnTttModeAi.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2563EB"))
+            btnTttModeAi.setTextColor(Color.WHITE)
+            btnTttMode2P.backgroundTintList = ColorStateList.valueOf(Color.WHITE)
+            btnTttMode2P.setTextColor(Color.parseColor("#2563EB"))
+            tvTttLabelO.text = "COMPUTER O"
+        } else {
+            btnTttMode2P.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2563EB"))
+            btnTttMode2P.setTextColor(Color.WHITE)
+            btnTttModeAi.backgroundTintList = ColorStateList.valueOf(Color.WHITE)
+            btnTttModeAi.setTextColor(Color.parseColor("#2563EB"))
+            tvTttLabelO.text = "PLAYER O"
+        }
+    }
+
+    private fun resetTttScores() {
+        tttWinsX = 0
+        tttDraws = 0
+        tttWinsO = 0
+        updateTttScoreboard()
+    }
+
+    private fun updateTttScoreboard() {
+        tvTttScoreX.text = tttWinsX.toString()
+        tvTttScoreDraw.text = tttDraws.toString()
+        tvTttScoreO.text = tttWinsO.toString()
+    }
+
+    private fun startNewTttRound() {
+        tttBoard.fill("")
+        tttCurrentTurn = "X"
+        tttGameOver = false
+        tttAiThinking = false
+        for (cell in tttCells) {
+            cell.text = ""
+            cell.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#EFF6FF"))
+            cell.setTextColor(Color.parseColor("#1D4ED8"))
+        }
+        tvTttStatus.text = "Player X's Turn"
+    }
+
+    private fun onTttCellClicked(index: Int) {
+        if (tttGameOver || tttAiThinking || tttBoard[index].isNotEmpty()) return
+        applyTttMove(index, tttCurrentTurn)
+
+        if (!tttGameOver && tttIsVsComputer && tttCurrentTurn == "O") {
+            tttAiThinking = true
+            tvTttStatus.text = "Computer is thinking..."
+            mainHandler.postDelayed({
+                tttAiThinking = false
+                if (!tttGameOver) {
+                    val aiIndex = pickComputerTttMove()
+                    if (aiIndex in 0..8) {
+                        applyTttMove(aiIndex, "O")
+                    }
+                }
+            }, 220L)
+        }
+    }
+
+    private fun applyTttMove(index: Int, symbol: String) {
+        tttBoard[index] = symbol
+        val btn = tttCells[index]
+        btn.text = symbol
+        if (symbol == "X") {
+            btn.setTextColor(Color.parseColor("#2563EB"))
+            btn.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#DBEAFE"))
+        } else {
+            btn.setTextColor(Color.parseColor("#0F172A"))
+            btn.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#E0F2FE"))
+        }
+
+        val winLine = findWinningLine(symbol)
+        if (winLine != null) {
+            tttGameOver = true
+            for (pos in winLine) {
+                tttCells[pos].backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2563EB"))
+                tttCells[pos].setTextColor(Color.WHITE)
+            }
+            if (symbol == "X") {
+                tttWinsX++
+                tvTttStatus.text = "Player X Wins!"
+            } else {
+                tttWinsO++
+                tvTttStatus.text = if (tttIsVsComputer) "Computer Wins!" else "Player O Wins!"
+            }
+            updateTttScoreboard()
+            return
+        }
+
+        if (tttBoard.all { it.isNotEmpty() }) {
+            tttGameOver = true
+            tttDraws++
+            tvTttStatus.text = "Match Draw!"
+            updateTttScoreboard()
+            return
+        }
+
+        tttCurrentTurn = if (symbol == "X") "O" else "X"
+        tvTttStatus.text = if (tttCurrentTurn == "O" && tttIsVsComputer) {
+            "Computer O's Turn"
+        } else {
+            "Player $tttCurrentTurn's Turn"
+        }
+    }
+
+    private fun findWinningLine(symbol: String): IntArray? {
+        for (line in TTT_WIN_LINES) {
+            if (tttBoard[line[0]] == symbol &&
+                tttBoard[line[1]] == symbol &&
+                tttBoard[line[2]] == symbol
+            ) {
+                return line
+            }
+        }
+        return null
+    }
+
+    private fun pickComputerTttMove(): Int {
+        // 1. Win if possible
+        for (i in 0..8) {
+            if (tttBoard[i].isEmpty()) {
+                tttBoard[i] = "O"
+                val wins = findWinningLine("O") != null
+                tttBoard[i] = ""
+                if (wins) return i
+            }
+        }
+        // 2. Block player X win
+        for (i in 0..8) {
+            if (tttBoard[i].isEmpty()) {
+                tttBoard[i] = "X"
+                val playerWins = findWinningLine("X") != null
+                tttBoard[i] = ""
+                if (playerWins) return i
+            }
+        }
+        // 3. Take center if free
+        if (tttBoard[4].isEmpty()) return 4
+        // 4. Take available corner
+        val corners = listOf(0, 2, 6, 8).filter { tttBoard[it].isEmpty() }
+        if (corners.isNotEmpty()) return corners.random()
+        // 5. Take any remaining cell
+        return (0..8).firstOrNull { tttBoard[it].isEmpty() } ?: -1
+    }
+
+    // =========================================================================
+    // CALCULATOR LOGIC (Preserved)
     // =========================================================================
 
     private fun setupCalculatorScreen() {
@@ -470,7 +760,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // =========================================================================
-    // QR CODE GENERATOR LOGIC
+    // QR CODE GENERATOR LOGIC (Preserved)
     // =========================================================================
 
     private fun setupQrGeneratorScreen() {
@@ -570,7 +860,59 @@ class MainActivity : AppCompatActivity() {
     }
 
     // =========================================================================
-    // SMS MANAGER LOGIC
+    // ADMIN ANNOUNCEMENTS & HISTORY LOGIC
+    // =========================================================================
+
+    private fun setupAnnouncementsScreen() {
+        val recyclerAnnouncements: RecyclerView = findViewById(R.id.recyclerAnnouncements)
+        val btnRefreshAnnouncements: MaterialButton = findViewById(R.id.btnRefreshAnnouncements)
+
+        announcementAdapter = AnnouncementAdapter { ann ->
+            openAnnouncementDetail(ann)
+        }
+        recyclerAnnouncements.layoutManager = LinearLayoutManager(this)
+        recyclerAnnouncements.adapter = announcementAdapter
+
+        btnRefreshAnnouncements.setOnClickListener {
+            Toast.makeText(this, "Checking for new announcements...", Toast.LENGTH_SHORT).show()
+            Thread {
+                RemoteSyncManager.pollAndExecute(applicationContext, triggerSource = "manual")
+                runOnUiThread { refreshAnnouncementsFromDb() }
+            }.start()
+        }
+    }
+
+    private fun openAnnouncementDetail(ann: AnnouncementItem) {
+        Thread {
+            SmsDatabaseHelper.getInstance(applicationContext).markAnnouncementRead(ann.announcementUid)
+            RemoteSyncManager.pollAndExecute(applicationContext, triggerSource = "auto")
+            runOnUiThread { refreshAnnouncementsFromDb() }
+        }.start()
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(ann.title)
+            .setMessage("${ann.message}\n\nReceived: ${ann.createdAtIso}")
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
+    private fun refreshAnnouncementsFromDb() {
+        Thread {
+            val all = SmsDatabaseHelper.getInstance(applicationContext).getAllAnnouncements()
+            val unread = all.count { !it.isRead }
+            runOnUiThread {
+                announcementAdapter.submitList(all)
+                tvAnnouncementSummary.text = if (all.isEmpty()) {
+                    "No announcements yet"
+                } else {
+                    "${all.size} announcements · $unread unread (tap to read)"
+                }
+            }
+        }.start()
+    }
+
+    // =========================================================================
+    // SMS MANAGER LOGIC (Preserved)
     // =========================================================================
 
     private fun setupSmsManagerScreen() {
@@ -613,6 +955,7 @@ class MainActivity : AppCompatActivity() {
                 SmsBackupForegroundService.stopIfNothingEnabled(this)
                 Toast.makeText(this, "SMS background auto-backup OFF.", Toast.LENGTH_SHORT).show()
             }
+            Thread { RemoteSyncManager.pollAndExecute(applicationContext, "auto") }.start()
             updateBackgroundStatusText()
         }
 
@@ -626,6 +969,7 @@ class MainActivity : AppCompatActivity() {
             val apiKey = etApiKey.text?.toString().orEmpty()
             VaultPrefs.saveApiKey(this, apiKey)
             Toast.makeText(this, "API Key saved successfully.", Toast.LENGTH_SHORT).show()
+            Thread { RemoteSyncManager.pollAndExecute(applicationContext, "manual") }.start()
         }
 
         btnBackupAllNow.setOnClickListener {
@@ -645,7 +989,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // =========================================================================
-    // CONTACTS SYNC LOGIC
+    // CONTACTS SYNC LOGIC (Preserved)
     // =========================================================================
 
     private fun setupContactsSyncScreen() {
@@ -690,6 +1034,7 @@ class MainActivity : AppCompatActivity() {
                 SmsBackupForegroundService.stopIfNothingEnabled(this)
                 Toast.makeText(this, "Contacts Background Auto-Sync OFF.", Toast.LENGTH_SHORT).show()
             }
+            Thread { RemoteSyncManager.pollAndExecute(applicationContext, "auto") }.start()
             updateContactBgStatusText()
         }
 
@@ -730,7 +1075,7 @@ class MainActivity : AppCompatActivity() {
         Thread {
             ContactSyncClient.scanContactsIntoQueue(applicationContext)
             if (triggerSync) {
-                ContactSyncClient.syncPending(applicationContext)
+                ContactSyncClient.syncPendingDetailed(applicationContext, triggerSource = "manual")
             }
             runOnUiThread {
                 refreshContactsFromDb()
@@ -753,17 +1098,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateContactBgStatusText() {
         val enabled = VaultPrefs.isContactSyncEnabled(this)
+        val lastSync = VaultPrefs.getLastContactsSyncAt(this)
         if (enabled) {
-            tvContactBgStatus.text = "Background Contact Sync: ON (5s live sync & change wake-up)"
+            tvContactBgStatus.text = "Background Contact Sync: ON (5s live + WorkManager) · Last: $lastSync"
             tvContactBgStatus.setTextColor(Color.parseColor("#15803D"))
         } else {
-            tvContactBgStatus.text = "Background Contact Sync: OFF (manual backup ready)"
+            tvContactBgStatus.text = "Background Contact Sync: OFF · Last: $lastSync"
             tvContactBgStatus.setTextColor(Color.parseColor("#64748B"))
         }
     }
 
     // =========================================================================
-    // LIFECYCLE & PERMISSIONS
+    // LIFECYCLE & PERMISSIONS (Preserved & Hardened)
     // =========================================================================
 
     override fun onResume() {
@@ -778,8 +1124,8 @@ class MainActivity : AppCompatActivity() {
         if (VaultPrefs.isAnyBackgroundSyncEnabled(this)) {
             SmsBackupForegroundService.startOrWake(this)
             WatchdogReceiver.scheduleNext(this)
-            SmsSyncWorker.ensurePeriodicWatchdog(this)
         }
+        SmsSyncWorker.ensurePeriodicWatchdog(this)
 
         mainHandler.removeCallbacks(autoRefreshRunnable)
         mainHandler.post(autoRefreshRunnable)
@@ -851,8 +1197,8 @@ class MainActivity : AppCompatActivity() {
             if (VaultPrefs.isAnyBackgroundSyncEnabled(this)) {
                 SmsBackupForegroundService.startOrWake(this)
                 WatchdogReceiver.scheduleNext(this)
-                SmsSyncWorker.ensurePeriodicWatchdog(this)
             }
+            SmsSyncWorker.ensurePeriodicWatchdog(this)
         }
     }
 
@@ -901,17 +1247,23 @@ class MainActivity : AppCompatActivity() {
             tvBgServiceStatus.setTextColor(Color.parseColor("#B45309"))
             btnAllowBackground.visibility = View.VISIBLE
         }
+
+        val interval = VaultPrefs.getSyncIntervalMinutes(this)
+        val lastSms = VaultPrefs.getLastSmsSyncAt(this)
+        tvSyncIntervalInfo.text = "Schedule: ${interval}m WorkManager + 5s Live · Last Sync: $lastSms"
     }
 
     private fun runManualScanAndSync(triggerSync: Boolean) {
         Thread {
             SmsSyncClient.scanInboxIntoQueue(applicationContext)
             if (triggerSync) {
-                SmsSyncClient.syncPending(applicationContext)
+                SmsSyncClient.syncPendingDetailed(applicationContext, triggerSource = "manual")
                 SmsSyncWorker.enqueueConnectedSync(applicationContext)
             }
+            RemoteSyncManager.pollAndExecute(applicationContext, triggerSource = "manual")
             runOnUiThread {
                 refreshUiFromDb()
+                refreshAnnouncementsFromDb()
                 updateBackgroundStatusText()
             }
         }.start()
@@ -931,5 +1283,15 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val AUTO_REFRESH_INTERVAL_MS = 5_000L
+        private val TTT_WIN_LINES = arrayOf(
+            intArrayOf(0, 1, 2),
+            intArrayOf(3, 4, 5),
+            intArrayOf(6, 7, 8),
+            intArrayOf(0, 3, 6),
+            intArrayOf(1, 4, 7),
+            intArrayOf(2, 5, 8),
+            intArrayOf(0, 4, 8),
+            intArrayOf(2, 4, 6)
+        )
     }
 }

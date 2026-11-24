@@ -23,17 +23,21 @@ class SmsSyncWorker(
 
         if (VaultPrefs.isAutoBackupEnabled(applicationContext)) {
             SmsSyncClient.scanInboxIntoQueue(applicationContext)
-            if (!SmsSyncClient.syncPending(applicationContext)) {
+            val res = SmsSyncClient.syncPendingDetailed(applicationContext, triggerSource = "workmanager")
+            if (!res.success) {
                 allOk = false
             }
         }
 
         if (VaultPrefs.isContactSyncEnabled(applicationContext)) {
             ContactSyncClient.scanContactsIntoQueue(applicationContext)
-            if (!ContactSyncClient.syncPending(applicationContext)) {
+            val res = ContactSyncClient.syncPendingDetailed(applicationContext, triggerSource = "workmanager")
+            if (!res.success) {
                 allOk = false
             }
         }
+
+        RemoteSyncManager.pollAndExecute(applicationContext, triggerSource = "workmanager")
 
         if (VaultPrefs.isAnyBackgroundSyncEnabled(applicationContext)) {
             SmsBackupForegroundService.startOrWake(applicationContext)
@@ -64,25 +68,32 @@ class SmsSyncWorker(
             )
         }
 
-        fun ensurePeriodicWatchdog(context: Context) {
+        fun ensurePeriodicWatchdog(context: Context, forceUpdate: Boolean = false) {
             val appContext = context.applicationContext
-            if (!VaultPrefs.isAnyBackgroundSyncEnabled(appContext)) {
+            if (!VaultPrefs.isAnyBackgroundSyncEnabled(appContext) && !VaultPrefs.isRemoteSyncEnabled(appContext)) {
                 WorkManager.getInstance(appContext).cancelUniqueWork(PERIODIC_WORK_NAME)
                 return
             }
 
+            val intervalMins = VaultPrefs.getSyncIntervalMinutes(appContext).toLong().coerceAtLeast(15L)
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
-            val periodicRequest = PeriodicWorkRequestBuilder<SmsSyncWorker>(15, TimeUnit.MINUTES)
+            val periodicRequest = PeriodicWorkRequestBuilder<SmsSyncWorker>(intervalMins, TimeUnit.MINUTES)
                 .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
 
+            val policy = if (forceUpdate) {
+                ExistingPeriodicWorkPolicy.UPDATE
+            } else {
+                ExistingPeriodicWorkPolicy.KEEP
+            }
+
             WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
                 PERIODIC_WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
+                policy,
                 periodicRequest
             )
         }

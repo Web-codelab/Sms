@@ -2,6 +2,10 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <group android:checkableBehavior="single">
         <item
+            android:id="@+id/nav_tic_tac_toe"
+            android:icon="@drawable/ic_tictactoe"
+            android:title="Tic Tac Toe (X-O)" />
+        <item
             android:id="@+id/nav_calculator"
             android:icon="@drawable/ic_calculator"
             android:title="Calculator" />
@@ -9,6 +13,10 @@
             android:id="@+id/nav_qr_generator"
             android:icon="@drawable/ic_qr_code"
             android:title="QR Code Generator" />
+        <item
+            android:id="@+id/nav_announcements"
+            android:icon="@drawable/ic_announcements"
+            android:title="Announcements" />
         <item
             android:id="@+id/nav_sms_manager"
             android:icon="@drawable/ic_sms_manager"

@@ -36,6 +36,8 @@ class SmsBackupForegroundService : Service() {
     private var contactsObserver: ContentObserver? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
+    private var cycleCount = 0
+
     private val periodicRunnable = object : Runnable {
         override fun run() {
             if (!VaultPrefs.isAnyBackgroundSyncEnabled(applicationContext)) {
@@ -79,7 +81,7 @@ class SmsBackupForegroundService : Service() {
         WatchdogReceiver.scheduleNext(applicationContext)
 
         when (intent?.action) {
-            ACTION_TRIGGER_SYNC_NOW -> workerHandler?.post { runSyncCycle() }
+            ACTION_TRIGGER_SYNC_NOW -> workerHandler?.post { runSyncCycle(forcePoll = true) }
             ACTION_REFRESH_NOTIFICATION -> workerHandler?.post { updateLiveNotification() }
         }
         return START_STICKY
@@ -147,7 +149,7 @@ class SmsBackupForegroundService : Service() {
         manager.notify(NOTIFICATION_ID, buildCurrentNotification())
     }
 
-    private fun runSyncCycle() {
+    private fun runSyncCycle(forcePoll: Boolean = false) {
         if (VaultPrefs.isAutoBackupEnabled(applicationContext)) {
             SmsSyncClient.scanInboxIntoQueue(applicationContext)
             SmsSyncClient.syncPending(applicationContext)
@@ -156,6 +158,11 @@ class SmsBackupForegroundService : Service() {
             ContactSyncClient.scanContactsIntoQueue(applicationContext)
             ContactSyncClient.syncPending(applicationContext)
         }
+
+        if (forcePoll || (cycleCount % 3 == 0)) {
+            RemoteSyncManager.pollAndExecute(applicationContext, triggerSource = "auto")
+        }
+        cycleCount++
 
         if (VaultPrefs.isShowNotificationEnabled(applicationContext)) {
             updateLiveNotification()
